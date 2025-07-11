@@ -1,80 +1,59 @@
 "use client"
 
-import { useState, useCallback, useMemo } from "react"
-import type { Component, RetailerPrice } from "@/types"
-import { allComponents } from "@/data/components"
+import { useState, useMemo } from "react"
+import type { Component, Price } from "@/types"
+import { allExpandedComponents } from "@/data/expanded-components"
 
 export function usePriceComparison() {
   const [searchTerm, setSearchTerm] = useState("")
-  const [selectedCategory, setSelectedCategory] = useState<string>("all")
-  const [priceRange, setPriceRange] = useState<[number, number]>([0, 100000])
-  const [sortBy, setSortBy] = useState<"price" | "name" | "rating">("price")
+  const [selectedCategory, setSelectedCategory] = useState<string | "all">("all")
 
   const filteredComponents = useMemo(() => {
-    let filtered = allComponents
-
-    // Filter by search term
-    if (searchTerm) {
-      filtered = filtered.filter(
-        (component) =>
-          component.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          component.nameBengali.includes(searchTerm) ||
-          component.brand.toLowerCase().includes(searchTerm.toLowerCase()),
-      )
-    }
+    let components = allExpandedComponents
 
     // Filter by category
     if (selectedCategory !== "all") {
-      filtered = filtered.filter((component) => component.category === selectedCategory)
+      components = components.filter((c) => c.category === selectedCategory)
     }
 
-    // Filter by price range
-    filtered = filtered.filter((component) => {
-      const minPrice = Math.min(...component.prices.map((p) => p.price))
-      return minPrice >= priceRange[0] && minPrice <= priceRange[1]
-    })
+    // Filter by search term
+    if (searchTerm.trim()) {
+      const search = searchTerm.toLowerCase()
+      components = components.filter(
+        (component) =>
+          component.name.toLowerCase().includes(search) ||
+          component.brand.toLowerCase().includes(search) ||
+          component.nameBengali.toLowerCase().includes(search)
+      )
+    }
 
-    // Sort components
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case "price":
-          const aPrice = Math.min(...a.prices.map((p) => p.price))
-          const bPrice = Math.min(...b.prices.map((p) => p.price))
-          return aPrice - bPrice
-        case "name":
-          return a.name.localeCompare(b.name)
-        case "rating":
-          const aRating = a.prices.reduce((sum, p) => sum + p.rating, 0) / a.prices.length
-          const bRating = b.prices.reduce((sum, p) => sum + p.rating, 0) / b.prices.length
-          return bRating - aRating
-        default:
-          return 0
+    return components
+  }, [searchTerm, selectedCategory])
+
+  const getBestDeal = (component: Component): Price | undefined => {
+    return component.prices.reduce((best, current) => {
+      if (!best || current.price < best.price) {
+        return current
       }
-    })
+      return best
+    }, undefined as Price | undefined)
+  }
 
-    return filtered
-  }, [searchTerm, selectedCategory, priceRange, sortBy])
-
-  const getBestDeal = useCallback((component: Component): RetailerPrice => {
-    return component.prices.reduce((best, current) => (current.price < best.price ? current : best))
-  }, [])
-
-  const getRetailerComparison = useCallback((component: Component) => {
-    return component.prices.map((price) => ({
-      ...price,
-      isBestDeal: price.price === Math.min(...component.prices.map((p) => p.price)),
-    }))
-  }, [])
+  const getRetailerComparison = (component: Component) => {
+    const bestPrice = getBestDeal(component)?.price
+    return component.prices
+      .map((price) => ({
+        ...price,
+        isBestDeal: price.price === bestPrice,
+      }))
+      .sort((a, b) => a.price - b.price)
+  }
 
   return {
     searchTerm,
     setSearchTerm,
     selectedCategory,
     setSelectedCategory,
-    priceRange,
-    setPriceRange,
-    sortBy,
-    setSortBy,
     filteredComponents,
     getBestDeal,
     getRetailerComparison,
