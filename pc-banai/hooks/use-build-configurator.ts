@@ -9,7 +9,7 @@ import type {
   CompatibilityWarning,
   CompatibilityError,
 } from "@/types"
-import { allComponents } from "@/data/components"
+import { allExpandedComponents as allComponents } from "@/data/expanded-components"
 
 export function useBuildConfigurator() {
   const [buildState, setBuildState] = useState<BuildState>({
