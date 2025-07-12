@@ -10,16 +10,19 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Configuration ---
-DB_URL = os.getenv("POSTGRES_URL_NON_POOLING") or os.getenv("POSTGRES_URL")
+# The workflow now provides the definitive, IP-based URL to this variable.
+DB_URL = os.getenv("POSTGRES_URL")
 VENDOR_ID = "startech"
 
 def get_db_connection():
     """Establishes a connection to the PostgreSQL database."""
     if not DB_URL:
-        print("Error: Database URL is not set.")
+        print("Error: POSTGRES_URL environment variable was not provided by the workflow.")
         return None
     try:
+        # This will now connect using the IP address provided by the workflow
         conn = psycopg2.connect(DB_URL)
+        print("Database connection established successfully.")
         return conn
     except psycopg2.OperationalError as e:
         print(f"Error connecting to database: {e}")
