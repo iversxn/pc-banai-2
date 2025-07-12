@@ -13,7 +13,7 @@ load_dotenv()
 DB_URL = os.getenv("DATABASE_URL")
 
 def get_db_connection():
-    """Establishes a connection to the PostgreSQL database."""
+    """Establishes a robust connection to the PostgreSQL database."""
     if not DB_URL:
         print("::error::FATAL: The DATABASE_URL environment variable was not found.")
         return None
@@ -28,20 +28,28 @@ def get_db_connection():
 def upsert_component_data(conn, component_data, vendor_id):
     """Inserts or updates a component and its price for a specific vendor."""
     with conn.cursor() as cur:
+        # Upsert component details
         cur.execute("""
-            INSERT INTO components (id, name, category, brand, socket, chipset, memory_type, form_factor, power_consumption, specifications, images, name_bengali, last_updated)
-            VALUES (%(id)s, %(name)s, %(category)s, %(brand)s, %(socket)s, %(chipset)s, %(memory_type)s, %(form_factor)s, %(power_consumption)s, %(specifications)s, %(images)s, %(name_bengali)s, NOW())
+            INSERT INTO components (id, name, category, brand, specifications, images, last_updated)
+            VALUES (%(id)s, %(name)s, %(category)s, %(brand)s, %(specifications)s, %(images)s, NOW())
             ON CONFLICT (id) DO UPDATE SET
-                name = EXCLUDED.name, category = EXCLUDED.category, brand = EXCLUDED.brand, socket = EXCLUDED.socket,
-                chipset = EXCLUDED.chipset, memory_type = EXCLUDED.memory_type, form_factor = EXCLUDED.form_factor,
-                power_consumption = EXCLUDED.power_consumption, specifications = EXCLUDED.specifications,
-                images = EXCLUDED.images, last_updated = NOW();
+                name = EXCLUDED.name,
+                category = EXCLUDED.category,
+                brand = EXCLUDED.brand,
+                specifications = EXCLUDED.specifications,
+                images = EXCLUDED.images,
+                last_updated = NOW();
         """, component_data)
+        
+        # Upsert price details
         cur.execute("""
             INSERT INTO prices (component_id, vendor_id, price, in_stock, url, last_updated)
             VALUES (%(component_id)s, %(vendor_id)s, %(price)s, %(in_stock)s, %(url)s, NOW())
             ON CONFLICT (component_id, vendor_id) DO UPDATE SET
-                price = EXCLUDED.price, in_stock = EXCLUDED.in_stock, url = EXCLUDED.url, last_updated = NOW();
+                price = EXCLUDED.price,
+                in_stock = EXCLUDED.in_stock,
+                url = EXCLUDED.url,
+                last_updated = NOW();
         """, {
             "component_id": component_data['id'], "vendor_id": vendor_id, "price": component_data['price'],
             "in_stock": component_data['in_stock'], "url": component_data['url']
@@ -52,31 +60,30 @@ def upsert_component_data(conn, component_data, vendor_id):
 # --- Vendor-Specific Scraping Logic ---
 
 def scrape_startech(conn, vendor_id, category_map):
-    """Scraper specifically for Star Tech."""
+    """Scraper specifically for Star Tech with corrected selectors."""
     print(f"\n--- Scraping Vendor: Star Tech ---")
-    for category_name, url_path in category_map.items():
-        url = f"https://www.startech.com.bd/{url_path}"
+    for category_name, url in category_map.items():
         print(f"Scraping {category_name.upper()} from: {url}")
         try:
-            page = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+            page = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
             page.raise_for_status()
+            print(f"Successfully fetched page: {url}")
         except requests.exceptions.RequestException as e:
             print(f"Warning: Could not fetch page {url}. Error: {e}")
             continue
 
         soup = BeautifulSoup(page.content, "html.parser")
-        # CORRECTED SELECTOR: Star Tech now uses 'p-item-inner'
+        # CORRECTED SELECTOR: The container for each product.
         products = soup.find_all("div", class_="p-item-inner")
-        print(f"Found {len(products)} products.")
+        print(f"Found {len(products)} products in {category_name}.")
 
         for product in products:
             try:
-                # CORRECTED SELECTORS for name, price, and stock
+                # CORRECTED SELECTORS for name, price, and stock elements within the container.
                 name_tag = product.find("h4", class_="p-item-name").find("a")
                 price_tag = product.find("div", class_="p-item-price").find("span")
                 stock_tag = product.find("div", class_="p-item-button")
 
-                # Robustness Check: Skip if essential info is missing
                 if not all([name_tag, price_tag, stock_tag]):
                     print("Warning: Skipping a product card with missing name, price, or stock info.")
                     continue
@@ -86,48 +93,33 @@ def scrape_startech(conn, vendor_id, category_map):
                 price = int(re.sub(r'[^\d]', '', price_tag.text.strip()))
                 in_stock = "add to cart" in stock_tag.text.strip().lower()
                 
-                # Create a stable ID from the product URL
                 slug = product_url.split('/')[-1]
                 component_id = f"{category_name}-{slug}"
-                
-                # Basic brand extraction
-                brand_match = re.search(r'(\w+)', name)
-                brand = brand_match.group(1) if brand_match else "Unknown"
+                brand = name.split(' ')[0]
 
-                # For now, we'll use placeholder specs. A detailed page scrape can be added later.
                 component = {
                     "id": component_id, "name": name, "category": category_name, "brand": brand,
-                    "socket": None, "chipset": None, "memory_type": None, "form_factor": None,
-                    "power_consumption": None, "specifications": Json({}),
-                    "images": [img['src'] for img in product.select('.p-item-img img')],
-                    "name_bengali": "", "price": price, "in_stock": in_stock, "url": product_url
+                    "specifications": Json({}), "images": [img['src'] for img in product.select('.p-item-img img')],
+                    "price": price, "in_stock": in_stock, "url": product_url
                 }
                 upsert_component_data(conn, component, vendor_id)
-                time.sleep(0.2) # Be respectful
+                time.sleep(0.2)
 
             except Exception as e:
                 print(f"Warning: Skipping a product due to a processing error: {e}")
                 continue
 
 def scrape_ryans(conn, vendor_id, category_map):
-    """Template for scraping Ryans Computers."""
+    """Template for scraping Ryans Computers. This needs its own specific selectors."""
     print(f"\n--- Scraping Vendor: Ryans Computers (Template) ---")
-    print("This scraper is a template. You need to fill in the correct selectors for Ryans.")
-    # for category_name, url_path in category_map.items():
-    #     url = f"https://www.ryanscomputers.com/{url_path}"
-    #     # 1. Fetch the page with requests
-    #     # 2. Parse with BeautifulSoup
-    #     # 3. Find the correct product containers (e.g., soup.find_all("div", class_="..."))
-    #     # 4. For each product, find the correct selectors for name, price, stock, etc.
-    #     # 5. Populate the 'component' dictionary and call upsert_component_data
+    print("This scraper is a template. To make it work, you must inspect ryanscomputers.com and find the correct HTML selectors for their product list.")
     pass
 
 def main():
     """Main function to orchestrate scraping for all vendors."""
     
     # --- VENDOR & CATEGORY CONFIGURATION ---
-    # This is where you define all vendors and the URL paths for their categories.
-    # This makes the scraper highly configurable.
+    # This is the central place to manage what gets scraped.
     VENDORS_TO_SCRAPE = {
         "startech": {
             "scrape_function": scrape_startech,
@@ -141,14 +133,10 @@ def main():
         "ryans": {
             "scrape_function": scrape_ryans,
             "categories": {
-                "cpu": "https://www.ryans.com/category/desktop-component-processor",
-                "motherboard": "https://www.ryans.com/category/desktop-component-motherboard",
-                "ram": "https://www.ryans.com/category/desktop-component-desktop-ram",
-                "gpu": "https://www.ryans.com/category/desktop-component-graphics-card",
-                # Add other Ryans category paths here
+                "cpu": "https://www.ryanscomputers.com/category/processor",
+                # You would add more Ryans URLs here
             }
         }
-        # Add other vendors like "techland" here in the same format.
     }
 
     conn = get_db_connection()
@@ -159,8 +147,9 @@ def main():
         for vendor_id, config in VENDORS_TO_SCRAPE.items():
             scrape_function = config["scrape_function"]
             category_map = config["categories"]
+            # Call the specific scrape function for the vendor
             scrape_function(conn, vendor_id, category_map)
-            time.sleep(5) # Wait 5 seconds between vendors
+            time.sleep(5) # A polite pause between scraping different vendors
     finally:
         if conn:
             conn.close()
