@@ -1,9 +1,11 @@
 import { Pool } from 'pg';
 import { NextRequest, NextResponse } from 'next/server';
 
-// Create a new pool instance using the connection string from .env.local
+// Use the Vercel-provided non-pooling URL in production, with a fallback to the local one.
+const connectionString = process.env.POSTGRES_URL_NON_POOLING || process.env.POSTGRES_URL;
+
 const pool = new Pool({
-  connectionString: process.env.POSTGRES_URL,
+  connectionString,
 });
 
 export async function GET(request: NextRequest) {
@@ -11,23 +13,31 @@ export async function GET(request: NextRequest) {
   const category = searchParams.get('category');
 
   try {
+    // The query now explicitly aliases snake_case columns to camelCase for frontend compatibility.
     let query = `
       SELECT 
-        c.*, 
+        c.id,
+        c.name,
+        c.category,
+        c.brand,
+        c.specifications,
+        c.images,
+        c.power_consumption as "powerConsumption",
+        c.name_bengali as "nameBengali",
         (
-          SELECT json_agg(p)
+          SELECT json_agg(p_info)
           FROM (
             SELECT 
               pr.price, 
-              pr.in_stock, 
+              pr.in_stock as "inStock", 
               pr.url, 
-              pr.last_updated,
+              pr.last_updated as "lastUpdated",
               v.name as "vendorName",
               v.id as "vendorId"
             FROM prices pr
             JOIN vendors v ON pr.vendor_id = v.id
             WHERE pr.component_id = c.id
-          ) p
+          ) p_info
         ) as prices
       FROM components c
     `;
@@ -41,15 +51,16 @@ export async function GET(request: NextRequest) {
 
     const { rows } = await pool.query(query, queryParams);
 
-    // The 'prices' field from the DB is a JSON string, so we parse it.
+    // The data is now correctly shaped, so we just ensure 'prices' is always an array.
     const components = rows.map(row => ({
       ...row,
-      prices: row.prices ? row.prices : [], // Ensure prices is an array
+      prices: row.prices || [],
     }));
 
     return NextResponse.json(components);
   } catch (error) {
-    console.error('API Error:', error);
-    return NextResponse.json({ message: 'Failed to fetch components' }, { status: 500 });
+    console.error('API Route Error:', error);
+    // Provide a more descriptive error response.
+    return NextResponse.json({ message: 'Failed to fetch components from the database.', error: (error as Error).message }, { status: 500 });
   }
 }
