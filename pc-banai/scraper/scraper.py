@@ -4,22 +4,28 @@ import pandas as pd
 import time
 from sqlalchemy import create_engine, text
 
-# Set your Supabase PostgreSQL connection URI here (replace [YOUR-PASSWORD])
+# Set your Supabase PostgreSQL connection URI here
 SUPABASE_DB_URL = "postgresql://postgres.gsjfvxlyjjprisfskhfz:Higalaxy3!@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
 
-BASE_URL = 'https://www.startech.com.bd/component/processor'
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
 }
 
-def get_total_pages():
-    response = requests.get(BASE_URL, headers=HEADERS)
-    soup = BeautifulSoup(response.content, 'html.parser')
-    pages = soup.select('ul.pagination li a.page-link')
-    page_numbers = [int(a.text.strip()) for a in pages if a.text.strip().isdigit()]
-    return max(page_numbers) if page_numbers else 1
+# Category mapping
+CATEGORIES = {
+    "processor": "https://www.startech.com.bd/component/processor",
+    "cpu_cooler": "https://www.startech.com.bd/component/CPU-Cooler",
+    "motherboard": "https://www.startech.com.bd/component/motherboard",
+    "graphics_card": "https://www.startech.com.bd/component/graphics-card",
+    "ram": "https://www.startech.com.bd/component/ram",
+    "power_supply": "https://www.startech.com.bd/component/power-supply",
+    "hard_disk_drive": "https://www.startech.com.bd/component/hard-disk-drive",
+    "ssd": "https://www.startech.com.bd/ssd",
+    "casing": "https://www.startech.com.bd/component/casing",
+    "casing_cooler": "https://www.startech.com.bd/component/casing-cooler"
+}
 
-def parse_product(card):
+def parse_product(card, category):
     try:
         name_tag = card.select_one('h4.p-item-name a')
         product_name = name_tag.text.strip()
@@ -46,6 +52,7 @@ def parse_product(card):
         short_specs = ' | '.join([li.text.strip() for li in specs_list]) if specs_list else 'N/A'
 
         return {
+            'category': category,
             'product_name': product_name,
             'price_bdt': price,
             'product_url': product_url,
@@ -59,65 +66,65 @@ def parse_product(card):
         print(f"[⚠️ parse_product error] {e}")
         return None
 
-
-
-def scrape_all_processors():
-    all_data = []
+def scrape_category(category, base_url):
+    data = []
     page = 1
 
     while True:
-        print(f"Scraping page {page}...")
-        url = f"{BASE_URL}?page={page}"
+        print(f"Scraping {category} - page {page}...")
+        url = f"{base_url}?page={page}"
         response = requests.get(url, headers=HEADERS)
         soup = BeautifulSoup(response.content, 'html.parser')
         product_cards = soup.select('div.p-item')
 
         if not product_cards:
-            print("🚫 No more products found — ending scrape.")
+            print(f"✅ Finished scraping {category}.\n")
             break
 
         for card in product_cards:
-            item = parse_product(card)
+            item = parse_product(card, category)
             if item:
-                all_data.append(item)
+                data.append(item)
 
         page += 1
         time.sleep(1.5)
 
-    print(f"✅ Scraped {len(all_data)} products in total.")
-    return all_data
-
+    return data
 
 def create_table_if_not_exists(engine):
     create_query = """
-    CREATE TABLE IF NOT EXISTS processors (
+    CREATE TABLE IF NOT EXISTS pc_components (
         id SERIAL PRIMARY KEY,
-        product_name TEXT,
+        category TEXT,
+        product_name TEXT NOT NULL,
         price_bdt TEXT,
-        product_url TEXT,
+        product_url TEXT UNIQUE,
         image_url TEXT,
         availability TEXT,
         brand TEXT,
-        short_specs TEXT
+        short_specs TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """
     with engine.connect() as conn:
         conn.execute(text(create_query))
-        print("✅ Table 'processors' ready in Supabase.")
+        print("✅ Table 'pc_components' ensured in Supabase.")
 
-def insert_into_supabase(data):
+def insert_into_supabase(all_data):
     engine = create_engine(SUPABASE_DB_URL)
     create_table_if_not_exists(engine)
 
-    df = pd.DataFrame(data)
-
-    # Optional: Remove duplicates before inserting (based on URL or name)
+    df = pd.DataFrame(all_data)
     df.drop_duplicates(subset=['product_url'], inplace=True)
 
-    # Insert into Supabase
-    df.to_sql('processors', engine, if_exists='append', index=False)
-    print(f"✅ Uploaded {len(df)} new processor entries to Supabase.")
+    df.to_sql('pc_components', engine, if_exists='append', index=False)
+    print(f"✅ Uploaded {len(df)} new items to Supabase.")
 
 if __name__ == '__main__':
-    data = scrape_all_processors()
-    insert_into_supabase(data)
+    all_data = []
+
+    for category, url in CATEGORIES.items():
+        category_data = scrape_category(category, url)
+        all_data.extend(category_data)
+
+    insert_into_supabase(all_data)
