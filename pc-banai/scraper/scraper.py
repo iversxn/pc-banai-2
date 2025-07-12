@@ -22,17 +22,29 @@ def get_total_pages():
 def parse_product(card):
     name = card.select_one('h4 > a').text.strip()
     url = card.select_one('h4 > a')['href']
-    image_url = card.select_one('img.img-fluid')['data-src']
-    price = card.select_one('.price').text.strip().replace(',', '').replace('৳', '').strip()
-    try:
-        availability = card.select_one('.p-status').text.strip()
-    except:
-        availability = 'N/A'
-    try:
-        brand = card.select_one('.product-brand > img')['alt']
-    except:
-        brand = 'N/A'
-    specs = ' | '.join([li.text.strip() for li in card.select('div.p-item-details ul li')])
+
+    # Safe image handling
+    img_tag = card.select_one('img.img-fluid')
+    if img_tag:
+        image_url = img_tag.get('data-src') or img_tag.get('src', 'N/A')
+    else:
+        image_url = 'N/A'
+
+    # Price
+    price = card.select_one('.price')
+    price = price.text.strip().replace(',', '').replace('৳', '').strip() if price else 'N/A'
+
+    # Availability
+    availability = card.select_one('.p-status')
+    availability = availability.text.strip() if availability else 'N/A'
+
+    # Brand
+    brand_img = card.select_one('.product-brand > img')
+    brand = brand_img['alt'] if brand_img and brand_img.has_attr('alt') else 'N/A'
+
+    # Specs
+    specs_list = card.select('div.p-item-details ul li')
+    specs = ' | '.join([li.text.strip() for li in specs_list]) if specs_list else 'N/A'
 
     return {
         'product_name': name,
@@ -43,6 +55,7 @@ def parse_product(card):
         'brand': brand,
         'short_specs': specs
     }
+
 
 def scrape_all_processors():
     all_data = []
