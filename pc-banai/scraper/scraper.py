@@ -10,22 +10,26 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Configuration ---
-# The workflow now provides the definitive, IP-based URL to this variable.
-DB_URL = os.getenv("POSTGRES_URL")
+# This script now ONLY uses the DATABASE_URL environment variable.
+DB_URL = os.getenv("DATABASE_URL")
 VENDOR_ID = "startech"
 
 def get_db_connection():
     """Establishes a connection to the PostgreSQL database."""
     if not DB_URL:
-        print("Error: POSTGRES_URL environment variable was not provided by the workflow.")
+        # This will cause the workflow to fail with a clear, helpful message.
+        print("::error::FATAL: The DATABASE_URL environment variable was not found or is empty.")
+        print("::error::Please ensure you have set the DATABASE_URL secret in your GitHub repository settings.")
         return None
     try:
-        # This will now connect using the IP address provided by the workflow
+        # Extract hostname for logging purposes
+        hostname = DB_URL.split('@')[1].split(':')[0]
+        print(f"Attempting to connect to database host: {hostname}")
         conn = psycopg2.connect(DB_URL)
         print("Database connection established successfully.")
         return conn
     except psycopg2.OperationalError as e:
-        print(f"Error connecting to database: {e}")
+        print(f"::error::Failed to connect to the database. Error: {e}")
         return None
 
 def scrape_product_details(product_url):
@@ -37,23 +41,11 @@ def scrape_product_details(product_url):
         soup = BeautifulSoup(page.content, "html.parser")
         
         specs = {}
-        # This dictionary maps the text found on the website to your DB column names
         key_mapping = {
-            'socket': 'socket',
-            'chipset': 'chipset',
-            'supported_memory': 'memory_type',
-            'form_factor': 'form_factor',
-            'power_consumption': 'power_consumption'
+            'socket': 'socket', 'chipset': 'chipset', 'supported_memory': 'memory_type',
+            'form_factor': 'form_factor', 'power_consumption': 'power_consumption'
         }
-        
-        # This will hold the extracted values for the dedicated columns
-        extracted_data = {
-            'socket': None,
-            'chipset': None,
-            'memory_type': None,
-            'form_factor': None,
-            'power_consumption': None
-        }
+        extracted_data = {k: None for k in key_mapping.values()}
 
         spec_table = soup.find("table", class_="data-table")
         if spec_table:
@@ -64,68 +56,42 @@ def scrape_product_details(product_url):
                     key_clean = re.sub(r'\s+', '_', key_raw)
                     value = cells[1].text.strip()
                     
-                    # Check if this key is one we want for a dedicated column
                     for map_key, db_col in key_mapping.items():
                         if map_key in key_clean:
                             extracted_data[db_col] = value
                             break
-                    else: # If it's not a dedicated key, add to the JSONB field
+                    else:
                         specs[key_clean] = value
 
-        # Post-process power consumption to get an integer
-        if extracted_data['power_consumption']:
+        if extracted_data.get('power_consumption'):
             match = re.search(r'(\d+)', extracted_data['power_consumption'])
-            if match:
-                extracted_data['power_consumption'] = int(match.group(1))
-            else:
-                extracted_data['power_consumption'] = None # No number found
+            extracted_data['power_consumption'] = int(match.group(1)) if match else None
 
         return extracted_data, specs
-
-    except requests.exceptions.RequestException as e:
-        print(f"  - Error fetching product page: {e}")
-        return {k: None for k in key_mapping}, {}
     except Exception as e:
         print(f"  - Error parsing product details: {e}")
-        return {k: None for k in key_mapping}, {}
-
+        return {k: None for k in key_mapping.values()}, {}
 
 def upsert_component_data(conn, component_data):
-    """Inserts or updates a component, now including dedicated spec columns."""
+    """Inserts or updates a component, including dedicated spec columns."""
     with conn.cursor() as cur:
-        # This SQL statement now includes the dedicated columns
         cur.execute("""
-            INSERT INTO components (id, name, category, brand, socket, chipset, memory_type, form_factor, power_consumption, specifications, images, name_bengali)
-            VALUES (%(id)s, %(name)s, %(category)s, %(brand)s, %(socket)s, %(chipset)s, %(memory_type)s, %(form_factor)s, %(power_consumption)s, %(specifications)s, %(images)s, %(name_bengali)s)
+            INSERT INTO components (id, name, category, brand, socket, chipset, memory_type, form_factor, power_consumption, specifications, images, name_bengali, last_updated)
+            VALUES (%(id)s, %(name)s, %(category)s, %(brand)s, %(socket)s, %(chipset)s, %(memory_type)s, %(form_factor)s, %(power_consumption)s, %(specifications)s, %(images)s, %(name_bengali)s, NOW())
             ON CONFLICT (id) DO UPDATE SET
-                name = EXCLUDED.name,
-                category = EXCLUDED.category,
-                brand = EXCLUDED.brand,
-                socket = EXCLUDED.socket,
-                chipset = EXCLUDED.chipset,
-                memory_type = EXCLUDED.memory_type,
-                form_factor = EXCLUDED.form_factor,
-                power_consumption = EXCLUDED.power_consumption,
-                specifications = EXCLUDED.specifications,
-                images = EXCLUDED.images,
-                last_updated = NOW();
+                name = EXCLUDED.name, category = EXCLUDED.category, brand = EXCLUDED.brand, socket = EXCLUDED.socket,
+                chipset = EXCLUDED.chipset, memory_type = EXCLUDED.memory_type, form_factor = EXCLUDED.form_factor,
+                power_consumption = EXCLUDED.power_consumption, specifications = EXCLUDED.specifications,
+                images = EXCLUDED.images, last_updated = NOW();
         """, component_data)
-
-        # The prices table logic remains the same
         cur.execute("""
             INSERT INTO prices (component_id, vendor_id, price, in_stock, url, last_updated)
             VALUES (%(component_id)s, %(vendor_id)s, %(price)s, %(in_stock)s, %(url)s, NOW())
             ON CONFLICT (component_id, vendor_id) DO UPDATE SET
-                price = EXCLUDED.price,
-                in_stock = EXCLUDED.in_stock,
-                url = EXCLUDED.url,
-                last_updated = NOW();
+                price = EXCLUDED.price, in_stock = EXCLUDED.in_stock, url = EXCLUDED.url, last_updated = NOW();
         """, {
-            "component_id": component_data['id'],
-            "vendor_id": VENDOR_ID,
-            "price": component_data['price'],
-            "in_stock": component_data['in_stock'],
-            "url": component_data['url']
+            "component_id": component_data['id'], "vendor_id": VENDOR_ID, "price": component_data['price'],
+            "in_stock": component_data['in_stock'], "url": component_data['url']
         })
     conn.commit()
     print(f"  -> Upserted: {component_data['name']}")
@@ -133,7 +99,47 @@ def upsert_component_data(conn, component_data):
 def scrape_category(conn, category_name, url):
     """Scrapes a category page and then drills down into each product."""
     print(f"\n--- Scraping Category: {category_name.upper()} ---")
-    # ... (This part is largely the same, but now passes the extracted data)
+    try:
+        page = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+        page.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"Error retrieving category page: {e}")
+        return
+
+    soup = BeautifulSoup(page.content, "html.parser")
+    products = soup.find_all("div", class_="p-item")
+    print(f"Found {len(products)} products in {category_name}.")
+
+    for product in products:
+        try:
+            name_tag = product.find("h4", class_="p-item-name").find("a")
+            name = name_tag.text.strip()
+            product_url = name_tag['href']
+            price_text = product.find("div", class_="p-price").find("span").text.strip()
+            price = int(re.sub(r'[^\d]', '', price_text))
+            stock_status_text = product.find("div", class_="actions").find("span").text.strip().lower()
+            in_stock = "in stock" in stock_status_text or "add to cart" in stock_status_text
+            slug = product_url.split('/')[-1]
+            component_id = f"{category_name}-{slug}"
+            brand_match = re.search(r'(\w+)', name)
+            brand = brand_match.group(1) if brand_match else "Unknown"
+
+            extracted_data, other_specs = scrape_product_details(product_url)
+
+            component = {
+                "id": component_id, "name": name, "category": category_name, "brand": brand,
+                "socket": extracted_data.get('socket'), "chipset": extracted_data.get('chipset'),
+                "memory_type": extracted_data.get('memory_type'), "form_factor": extracted_data.get('form_factor'),
+                "power_consumption": extracted_data.get('power_consumption'),
+                "specifications": Json(other_specs),
+                "images": [img['src'] for img in product.select('.p-item-img img')],
+                "name_bengali": "", "price": price, "in_stock": in_stock, "url": product_url
+            }
+            upsert_component_data(conn, component)
+            time.sleep(0.5)
+        except Exception as e:
+            print(f"Skipping a product due to a processing error: {e}")
+            continue
 
 def main():
     """Main function to run the scrapers."""
@@ -145,14 +151,10 @@ def main():
         scrape_targets = {
             "cpu": "https://www.startech.com.bd/processor",
             "motherboard": "https://www.startech.com.bd/motherboard",
-            "ram": "https://www.startech.com.bd/component/ram",
-            "gpu": "https://www.startech.com.bd/component/graphics-card",
         }
-
         for category, url in scrape_targets.items():
             scrape_category(conn, category, url)
             time.sleep(2)
-
     finally:
         if conn:
             conn.close()
