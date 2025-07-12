@@ -23,32 +23,8 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r pc-banai/scraper/requirements.txt
 
-    - name: Resolve Supabase Host to IPv4
-      id: resolve_ip
-      run: |
-        SUPABASE_HOST="db.gsjfvxlyjjprisfskhfz.supabase.co"
-        
-        # Forcing DNS resolution via Google's public DNS server (8.8.8.8)
-        # This is a robust way to bypass runner-specific DNS issues.
-        echo "Attempting to resolve $SUPABASE_HOST using Google DNS..."
-        IPV4_ADDRESS=$(dig +short A $SUPABASE_HOST @8.8.8.8 | head -n 1)
-        
-        # Check if the IP address was successfully resolved
-        if [ -z "$IPV4_ADDRESS" ]; then
-          echo "::error::Could not resolve IPv4 address for $SUPABASE_HOST even with Google DNS."
-          exit 1
-        fi
-        
-        echo "Successfully resolved $SUPABASE_HOST to $IPV4_ADDRESS"
-        
-        # Replace the hostname in the connection string with the resolved IP
-        IP_BASED_CONN_STR=$(echo "${{ secrets.POSTGRES_URL_NON_POOLING }}" | sed "s|@$SUPABASE_HOST|@$IPV4_ADDRESS|")
-        
-        # Make the new IP-based connection string available to the next step
-        echo "IP_CONN_STR=$IP_BASED_CONN_STR" >> $GITHUB_ENV
-
     - name: Run scraper
       env:
-        # Use the new, IP-based connection string generated in the previous step
-        POSTGRES_URL: ${{ env.IP_CONN_STR }}
+        # Use the new, single, correct secret
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
       run: python pc-banai/scraper/scraper.py
