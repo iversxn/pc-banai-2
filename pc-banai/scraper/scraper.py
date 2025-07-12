@@ -168,8 +168,8 @@ def main():
     try:
         # Using the corrected, working URLs for Star Tech
         startech_targets = {
-            "cpu": "https://www.startech.com.bd/processor",
-            "motherboard": "https://www.startech.com.bd/motherboard",
+            "cpu": "https://www.startech.com.bd/component/processor",
+            "motherboard": "https://www.startech.com.bd/component/motherboard",
             "ram": "https://www.startech.com.bd/component/ram",
             "gpu": "https://www.startech.com.bd/component/graphics-card"
         }
