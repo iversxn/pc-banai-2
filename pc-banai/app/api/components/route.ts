@@ -13,17 +13,21 @@ export async function GET(request: NextRequest) {
   const category = searchParams.get('category');
 
   try {
-    // The query now explicitly aliases snake_case columns to camelCase for frontend compatibility.
+    // The query now explicitly selects and aliases all required columns.
     let query = `
       SELECT 
         c.id,
         c.name,
+        c.name_bengali as "nameBengali",
         c.category,
         c.brand,
+        c.socket,
+        c.chipset,
+        c.memory_type as "memoryType",
+        c.form_factor as "formFactor",
+        c.power_consumption as "powerConsumption",
         c.specifications,
         c.images,
-        c.power_consumption as "powerConsumption",
-        c.name_bengali as "nameBengali",
         (
           SELECT json_agg(p_info)
           FROM (
@@ -51,7 +55,6 @@ export async function GET(request: NextRequest) {
 
     const { rows } = await pool.query(query, queryParams);
 
-    // The data is now correctly shaped, so we just ensure 'prices' is always an array.
     const components = rows.map(row => ({
       ...row,
       prices: row.prices || [],
@@ -60,7 +63,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(components);
   } catch (error) {
     console.error('API Route Error:', error);
-    // Provide a more descriptive error response.
     return NextResponse.json({ message: 'Failed to fetch components from the database.', error: (error as Error).message }, { status: 500 });
   }
 }
