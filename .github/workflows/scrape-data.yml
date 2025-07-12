@@ -2,8 +2,6 @@ name: Scrape Data
 
 on:
   workflow_dispatch: # Allows manual triggering
-  schedule:
-    - cron: '0 0 * * *' # Runs at midnight UTC every day
 
 jobs:
   scrape:
@@ -25,6 +23,6 @@ jobs:
 
     - name: Run scraper
       env:
-        # Use the new, single, correct secret
+        # This passes your new pooled URL secret to the scraper script
         DATABASE_URL: ${{ secrets.DATABASE_URL }}
       run: python pc-banai/scraper/scraper.py
