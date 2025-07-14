@@ -28,6 +28,7 @@ export interface RetailerPrice {
   warranty: string
   rating: number
   trend: "up" | "down" | "stable"
++ productUrl?: string
 }
 
 export interface BuildState {
