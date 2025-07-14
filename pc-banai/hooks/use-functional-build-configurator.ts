@@ -1,17 +1,13 @@
+// pc-banai/hooks/use-functional-build-configurator.ts
+
 "use client"
 
 import { useState, useCallback, useEffect, useMemo } from "react"
-import type { Component, BuildState, ComponentSelection, CompatibilityCheck } from "@/types"
-
-// REMOVED: No longer importing from a static file.
-// import { allExpandedComponents } from "@/data/expanded-components"
+import type { Component, BuildState, ComponentSelection, CompatibilityCheck, CompatibilityError, CompatibilityWarning } from "@/types"
 
 export function useFunctionalBuildConfigurator() {
-  // --- NEW: State for storing components fetched from the API ---
   const [allComponents, setAllComponents] = useState<Component[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
-  // --- Existing state management ---
   const [selectedComponents, setSelectedComponents] = useState<ComponentSelection>({})
   const [totalPrice, setTotalPrice] = useState(0)
   const [totalWattage, setTotalWattage] = useState(0)
@@ -23,7 +19,6 @@ export function useFunctionalBuildConfigurator() {
   const [isCalculating, setIsCalculating] = useState(false)
   const [buildHistory, setBuildHistory] = useState<BuildState[]>([])
 
-  // --- NEW: Fetch data from the API when the hook is first used ---
   useEffect(() => {
     const fetchComponents = async () => {
       setIsLoading(true);
@@ -36,16 +31,13 @@ export function useFunctionalBuildConfigurator() {
         setAllComponents(data);
       } catch (error) {
         console.error("Failed to fetch components:", error);
-        setAllComponents([]); // On error, set to empty to prevent crashes
+        setAllComponents([]);
       } finally {
         setIsLoading(false);
       }
     };
-
     fetchComponents();
-  }, []); // Empty dependency array ensures this runs only once on mount.
-
-  // --- The rest of the logic remains the same, but now uses the `allComponents` state ---
+  }, []);
 
   const calculateRealPrice = useCallback((components: ComponentSelection): number => {
     let total = 0
@@ -68,7 +60,7 @@ export function useFunctionalBuildConfigurator() {
         if (!component) return;
         const items = Array.isArray(component) ? component : [component];
         items.forEach((item) => {
-            wattage += item.power_consumption || 0;
+            wattage += item.powerConsumption || 0;
         });
     });
     return wattage;
@@ -76,8 +68,8 @@ export function useFunctionalBuildConfigurator() {
 
   const checkRealCompatibility = useCallback(
     (components: ComponentSelection): CompatibilityCheck => {
-      const warnings: any[] = [];
-      const errors: any[] = [];
+      const warnings: CompatibilityWarning[] = [];
+      const errors: CompatibilityError[] = [];
 
       if (components.cpu && components.motherboard) {
         if (components.cpu.socket !== components.motherboard.socket) {
@@ -91,12 +83,12 @@ export function useFunctionalBuildConfigurator() {
       }
 
       if (components.ram && components.motherboard && Array.isArray(components.ram) && components.ram.length > 0) {
-        const ramType = components.ram[0].memory_type;
-        if (ramType !== components.motherboard.memory_type) {
+        const ramType = components.ram[0].memoryType;
+        if (ramType !== components.motherboard.memoryType) {
           errors.push({
             type: "memory_type_mismatch",
-            message: `RAM type ${ramType} incompatible with motherboard memory type ${components.motherboard.memory_type}`,
-            messageBengali: `র্যামের ধরন ${ramType} মাদারবোর্ডের মেমরি টাইপ ${components.motherboard.memory_type} এর সাথে সামঞ্জস্যপূর্ণ নয়`,
+            message: `RAM type ${ramType} incompatible with motherboard memory type ${components.motherboard.memoryType}`,
+            messageBengali: `র্যামের ধরন ${ramType} মাদারবোর্ডের মেমরি টাইপ ${components.motherboard.memoryType} এর সাথে সামঞ্জস্যপূর্ণ নয়`,
             components: ["ram", "motherboard"],
           });
         }
@@ -108,6 +100,7 @@ export function useFunctionalBuildConfigurator() {
   );
 
   useEffect(() => {
+    setIsCalculating(true);
     const newPrice = calculateRealPrice(selectedComponents);
     const newWattage = calculateRealWattage(selectedComponents);
     const newCompatibility = checkRealCompatibility(selectedComponents);
@@ -115,35 +108,72 @@ export function useFunctionalBuildConfigurator() {
     setTotalPrice(newPrice);
     setTotalWattage(newWattage);
     setCompatibility(newCompatibility);
+    setIsCalculating(false);
   }, [selectedComponents, calculateRealPrice, calculateRealWattage, checkRealCompatibility]);
 
   const selectComponent = useCallback((component: Component) => {
-    // This function remains the same
-    // ...
+    setSelectedComponents((prev) => {
+      const newSelection = { ...prev };
+      const category = component.category as keyof ComponentSelection;
+
+      if (category === "ram" || category === "storage") {
+        const existing = (newSelection[category] as Component[]) || [];
+        if (!existing.some(c => c.id === component.id)) {
+          newSelection[category] = [...existing, component];
+        }
+      } else {
+        newSelection[category] = component;
+      }
+      return newSelection;
+    });
   }, []);
-  
+
   const removeComponent = useCallback((componentId: string, category: keyof ComponentSelection) => {
-    // This function remains the same
-    // ...
+    setSelectedComponents((prev) => {
+      const newSelection = { ...prev };
+      const componentInCategory = newSelection[category];
+
+      if (Array.isArray(componentInCategory)) {
+        const updatedCategory = componentInCategory.filter(c => c.id !== componentId);
+        if (updatedCategory.length > 0) {
+          newSelection[category] = updatedCategory;
+        } else {
+          delete newSelection[category];
+        }
+      } else {
+        if (componentInCategory?.id === componentId) {
+          delete newSelection[category];
+        }
+      }
+      return newSelection;
+    });
   }, []);
 
   const clearBuild = useCallback(() => {
-    // This function remains the same
-    // ...
+    setSelectedComponents({});
   }, []);
 
   const saveBuild = useCallback(() => {
-    // This function remains the same
-    // ...
+    const buildToSave: BuildState = {
+      components: selectedComponents,
+      totalPrice,
+      compatibility,
+      wattage: totalWattage,
+      selectedRetailers: {},
+    };
+    setBuildHistory((prev) => [buildToSave, ...prev]);
+    const buildUrl = btoa(JSON.stringify(selectedComponents));
+    const shareUrl = `${window.location.origin}/build?data=${buildUrl}`;
+    navigator.clipboard.writeText(shareUrl);
+    return shareUrl;
   }, [selectedComponents, totalPrice, compatibility, totalWattage]);
 
   const getCompatibleComponents = useCallback(
     (category: keyof ComponentSelection): Component[] => {
-      if (isLoading) return []; // Don't filter if data isn't ready
+      if (isLoading) return [];
 
       const categoryComponents = allComponents.filter((c) => c.category === category);
 
-      // The rest of the filtering logic is the same
       return categoryComponents.filter((component) => {
         if (category === "cpu" && selectedComponents.motherboard) {
           return component.socket === selectedComponents.motherboard.socket;
@@ -152,7 +182,7 @@ export function useFunctionalBuildConfigurator() {
           return component.socket === selectedComponents.cpu.socket;
         }
         if (category === "ram" && selectedComponents.motherboard) {
-          return component.memory_type === selectedComponents.motherboard.memory_type;
+          return component.memoryType === selectedComponents.motherboard.memoryType;
         }
         return true;
       });
@@ -178,7 +208,7 @@ export function useFunctionalBuildConfigurator() {
     totalWattage,
     compatibility,
     isCalculating,
-    isLoading, // <-- Export isLoading for the UI
+    isLoading,
     buildHistory,
     selectComponent,
     removeComponent,
