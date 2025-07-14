@@ -38,7 +38,7 @@ export async function GET(request: Request) {
       category,
       brand: item.brand,
       specifications: { summary: item.short_specs },
-      prices: [
+prices: [
         {
           retailerId: "startech",
           retailerName: "StarTech",
@@ -50,6 +50,7 @@ export async function GET(request: Request) {
           warranty: "N/A",
           rating: 0,
           trend: "stable",
++         productUrl: item.product_url,
         },
       ],
       compatibility: {},
