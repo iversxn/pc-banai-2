@@ -82,7 +82,7 @@ def scrape_category(category, base_url):
             break
 
         for card in product_cards:
-            item = parse_product(card, category)
+            item = parse_product(card)  # ✅ Correct number of arguments now
             if item:
                 data.append(item)
 
