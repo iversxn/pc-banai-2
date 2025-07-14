@@ -1,31 +1,72 @@
-"use client"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import { Search, TrendingDown, TrendingUp, Star, ExternalLink } from "lucide-react"
+"use client";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import {
+  Search,
+  TrendingDown,
+  TrendingUp,
+  Star,
+  ExternalLink,
+} from "lucide-react";
+import { usePriceComparison } from "@/hooks/use-price-comparison";
+import { Skeleton } from "@/components/ui/skeleton";
 
-// Add the import at the top
-import { usePriceComparison } from "@/hooks/use-price-comparison"
-
-// Replace the existing component content with functional implementation
 export function PriceComparison() {
   const {
     searchTerm,
     setSearchTerm,
-    selectedCategory,
-    setSelectedCategory,
     filteredComponents,
-    getBestDeal,
+    isLoading, // Use the loading state from the hook
     getRetailerComparison,
-  } = usePriceComparison()
+  } = usePriceComparison();
+
+  // Display a loading skeleton while fetching data
+  if (isLoading) {
+    return (
+      <section id="price-comparison" className="py-20 bg-white">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-16">
+            <Skeleton className="h-8 w-1/2 mx-auto mb-4" />
+            <Skeleton className="h-6 w-3/4 mx-auto mb-8" />
+            <div className="max-w-md mx-auto">
+              <Skeleton className="h-10 w-full" />
+            </div>
+          </div>
+          <div className="space-y-8">
+            {[...Array(3)].map((_, i) => (
+              <Card key={i} className="overflow-hidden">
+                <CardHeader className="bg-gray-50 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Skeleton className="h-7 w-64 mb-2" />
+                      <Skeleton className="h-5 w-24" />
+                    </div>
+                    <Skeleton className="h-8 w-32" />
+                  </div>
+                </CardHeader>
+                <CardContent className="p-4">
+                  <Skeleton className="h-24 w-full" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section id="price-comparison" className="py-20 bg-white">
       <div className="container mx-auto px-4">
         <div className="text-center mb-16">
-          <h2 className="text-3xl font-bold text-gray-900 mb-4">Real-time Price Comparison</h2>
-          <p className="text-lg text-gray-600 mb-8">Compare prices across 25+ Bangladeshi retailers instantly</p>
+          <h2 className="text-3xl font-bold text-gray-900 mb-4">
+            Real-time Price Comparison
+          </h2>
+          <p className="text-lg text-gray-600 mb-8">
+            Compare prices across 25+ Bangladeshi retailers instantly
+          </p>
 
           <div className="max-w-md mx-auto relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
@@ -68,19 +109,29 @@ export function PriceComparison() {
                     <tbody>
                       {getRetailerComparison(component).map((price, idx) => (
                         <tr key={idx} className="border-b hover:bg-gray-50">
-                          <td className="p-4 font-medium">{price.retailerName}</td>
+                          <td className="p-4 font-medium">
+                            {price.retailerName}
+                          </td>
                           <td className="p-4">
                             <span
                               className={`text-lg font-bold ${price.isBestDeal ? "text-green-600" : "text-gray-900"}`}
                             >
                               ৳{price.price.toLocaleString()}
                             </span>
-                            {price.isBestDeal && <Badge className="ml-2 bg-green-100 text-green-800">Best Deal</Badge>}
+                            {price.isBestDeal && (
+                              <Badge className="ml-2 bg-green-100 text-green-800">
+                                Best Deal
+                              </Badge>
+                            )}
                           </td>
                           <td className="p-4">
                             <Badge
                               variant={price.inStock ? "default" : "secondary"}
-                              className={price.inStock ? "bg-green-100 text-green-800" : ""}
+                              className={
+                                price.inStock
+                                  ? "bg-green-100 text-green-800"
+                                  : ""
+                              }
                             >
                               {price.inStock ? "In Stock" : "Out of Stock"}
                             </Badge>
@@ -92,12 +143,31 @@ export function PriceComparison() {
                             </div>
                           </td>
                           <td className="p-4">
-                            {price.trend === "down" && <TrendingDown className="h-4 w-4 text-green-600" />}
-                            {price.trend === "up" && <TrendingUp className="h-4 w-4 text-red-600" />}
-                            {price.trend === "stable" && <div className="h-4 w-4 bg-gray-400 rounded-full"></div>}
+                            {price.trend === "down" && (
+                              <TrendingDown className="h-4 w-4 text-green-600" />
+                            )}
+                            {price.trend === "up" && (
+                              <TrendingUp className="h-4 w-4 text-red-600" />
+                            )}
+                            {price.trend === "stable" && (
+                              <div className="h-4 w-4 bg-gray-400 rounded-full" />
+                            )}
                           </td>
                           <td className="p-4">
-                            <Button size="sm" className="flex items-center gap-1" disabled={!price.inStock}>
+                            <Button
+                              size="sm"
+                              className="flex items-center gap-1"
+                              disabled={!price.inStock || !price.productUrl}
+                              onClick={() => {
+                                if (price.productUrl) {
+                                  window.open(
+                                    price.productUrl,
+                                    "_blank",
+                                    "noopener,noreferrer",
+                                  );
+                                }
+                              }}
+                            >
                               Buy Now
                               <ExternalLink className="h-3 w-3" />
                             </Button>
@@ -113,5 +183,5 @@ export function PriceComparison() {
         </div>
       </div>
     </section>
-  )
+  );
 }
