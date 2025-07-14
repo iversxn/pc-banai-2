@@ -1,68 +1,69 @@
-import { Pool } from 'pg';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from "next/server"
+import supabase from "@/utils/supabaseClient"
 
-// Use the Vercel-provided non-pooling URL in production, with a fallback to the local one.
-const connectionString = process.env.POSTGRES_URL_NON_POOLING || process.env.POSTGRES_URL;
+const CATEGORY_TABLES: Record<string, string> = {
+  cpu: "processors",
+  gpu: "graphics_cards",
+  motherboard: "motherboards",
+  ram: "rams",
+  storage: "ssd_drives", // HDD and SSD will be merged
+  psu: "power_supplies",
+  case: "casings",
+  cooling: "cpu_coolers", // or casing_coolers depending on UI
+}
 
-const pool = new Pool({
-  connectionString,
-});
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url)
+  const categoryParam = searchParams.get("category")
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const category = searchParams.get('category');
+  const categoriesToFetch = categoryParam
+    ? [categoryParam]
+    : Object.keys(CATEGORY_TABLES)
 
-  try {
-    // The query now explicitly selects and aliases all required columns.
-    let query = `
-      SELECT 
-        c.id,
-        c.name,
-        c.name_bengali as "nameBengali",
-        c.category,
-        c.brand,
-        c.socket,
-        c.chipset,
-        c.memory_type as "memoryType",
-        c.form_factor as "formFactor",
-        c.power_consumption as "powerConsumption",
-        c.specifications,
-        c.images,
-        (
-          SELECT json_agg(p_info)
-          FROM (
-            SELECT 
-              pr.price, 
-              pr.in_stock as "inStock", 
-              pr.url, 
-              pr.last_updated as "lastUpdated",
-              v.name as "vendorName",
-              v.id as "vendorId"
-            FROM prices pr
-            JOIN vendors v ON pr.vendor_id = v.id
-            WHERE pr.component_id = c.id
-          ) p_info
-        ) as prices
-      FROM components c
-    `;
-    
-    const queryParams = [];
+  const allComponents: any[] = []
 
-    if (category) {
-      query += ' WHERE c.category = $1';
-      queryParams.push(category);
+  for (const category of categoriesToFetch) {
+    const table = CATEGORY_TABLES[category]
+    const { data, error } = await supabase.from(table).select("*")
+
+    if (error) {
+      console.error(`Failed to fetch ${category}:`, error)
+      continue
     }
 
-    const { rows } = await pool.query(query, queryParams);
+    const normalized = (data || []).map((item: any, index: number) => ({
+      id: `${category}-${index}`,
+      name: item.product_name,
+      nameBengali: item.product_name,
+      category,
+      brand: item.brand,
+      specifications: { summary: item.short_specs },
+      prices: [
+        {
+          retailerId: "startech",
+          retailerName: "StarTech",
+          price: parseInt(item.price_bdt) || 0,
+          currency: "BDT",
+          inStock: item.availability?.toLowerCase() !== "out of stock",
+          lastUpdated: new Date(),
+          shippingCost: 0,
+          warranty: "N/A",
+          rating: 0,
+          trend: "stable",
+        },
+      ],
+      compatibility: {},
+      images: [item.image_url],
+      powerConsumption: 0,
+      socket: null,
+      chipset: null,
+      memoryType: null,
+      formFactor: null,
+      reviews: [],
+    }))
 
-    const components = rows.map(row => ({
-      ...row,
-      prices: row.prices || [],
-    }));
-
-    return NextResponse.json(components);
-  } catch (error) {
-    console.error('API Route Error:', error);
-    return NextResponse.json({ message: 'Failed to fetch components from the database.', error: (error as Error).message }, { status: 500 });
+    allComponents.push(...normalized)
   }
+
+  return NextResponse.json(allComponents)
 }
