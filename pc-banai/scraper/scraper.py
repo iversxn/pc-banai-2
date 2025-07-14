@@ -25,7 +25,7 @@ CATEGORIES = {
     "casing_cooler": "https://www.startech.com.bd/component/casing-cooler"
 }
 
-def parse_product(card, category):
+def parse_product(card):
     try:
         name_tag = card.select_one('h4.p-item-name a')
         product_name = name_tag.text.strip()
@@ -52,7 +52,6 @@ def parse_product(card, category):
         short_specs = ' | '.join([li.text.strip() for li in specs_list]) if specs_list else 'N/A'
 
         return {
-            'category': category,
             'product_name': product_name,
             'price_bdt': price,
             'product_url': product_url,
@@ -65,6 +64,7 @@ def parse_product(card, category):
     except Exception as e:
         print(f"[⚠️ parse_product error] {e}")
         return None
+
 
 def scrape_category(category, base_url):
     data = []
