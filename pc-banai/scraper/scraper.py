@@ -166,12 +166,23 @@ def insert_into_supabase(category, data):
     df = pd.DataFrame(data)
     df.drop_duplicates(subset=['product_url'], inplace=True)
 
+    # --- NEW: Row-by-row insertion to prevent timeouts ---
     with engine.connect() as conn:
-        conn.execute(text(f"TRUNCATE TABLE {table_name} RESTART IDENTITY;"))
-        print(f"Cleared table '{table_name}' for fresh data.")
-        # ** THE FIX IS HERE: Added chunksize to break the insert into batches **
-        df.to_sql(table_name, engine, if_exists='append', index=False, chunksize=50)
-        print(f"✅ Uploaded {len(df)} items to '{table_name}' table.")
+        with conn.begin(): # Start a transaction
+            conn.execute(text(f"TRUNCATE TABLE {table_name} RESTART IDENTITY;"))
+            print(f"Cleared table '{table_name}' for fresh data.")
+            
+            # Iterate over the DataFrame and insert each row individually
+            for index, row in df.iterrows():
+                row_dict = row.to_dict()
+                columns = ", ".join(row_dict.keys())
+                placeholders = ", ".join([f":{col}" for col in row_dict.keys()])
+                
+                insert_stmt = text(f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})")
+                conn.execute(insert_stmt, row_dict)
+
+    print(f"✅ Successfully uploaded {len(df)} items to '{table_name}' table.")
+
 
 def category_to_table_name(category):
     return {
