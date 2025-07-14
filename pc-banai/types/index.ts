@@ -1,3 +1,5 @@
+// pc-banai/types/index.ts
+
 export interface Component {
   id: string
   name: string
@@ -28,7 +30,7 @@ export interface RetailerPrice {
   warranty: string
   rating: number
   trend: "up" | "down" | "stable"
-+ productUrl?: string
+  productUrl?: string
 }
 
 export interface BuildState {
@@ -73,11 +75,13 @@ export interface CompatibilityError {
 export type ComponentCategory = "cpu" | "motherboard" | "ram" | "gpu" | "storage" | "psu" | "case" | "cooling"
 
 export interface ComponentSpecs {
-  [key: string]: string | number | boolean
+  summary: string | null
+  wattage?: number
+  [key: string]: string | number | boolean | null
 }
 
 export interface CompatibilityInfo {
-  socket?: string
+  socket?: string | null
   chipset?: string[]
   memoryType?: string[]
   formFactor?: string[]
