@@ -16,6 +16,7 @@ const CATEGORY_TABLES: Record<string, string> = {
 
 // --- Data Parsing Helpers ---
 const findSpec = (specs: string, key: string): string | null => {
+  if (!specs) return null;
   const regex = new RegExp(`${key}[^:]*:\\s*([^|]+)`, 'i');
   const match = specs.match(regex);
   if (match && match[1]) {
@@ -25,7 +26,8 @@ const findSpec = (specs: string, key: string): string | null => {
 };
 
 const parseWattage = (specs: string, name: string): number => {
-  const combinedText = `${specs.toLowerCase()} ${name.toLowerCase()}`;
+  if (!specs && !name) return 0;
+  const combinedText = `${specs || ''} ${name || ''}`.toLowerCase();
   const wattageMatch = combinedText.match(/(\d+)\s*w/);
   if (wattageMatch && wattageMatch[1]) {
     const watts = parseInt(wattageMatch[1], 10);
@@ -37,6 +39,7 @@ const parseWattage = (specs: string, name: string): number => {
 };
 
 const parseMemoryType = (specs: string): string | null => {
+  if (!specs) return null;
   const lowerSpecs = specs.toLowerCase();
   if (lowerSpecs.includes("ddr5")) return "DDR5";
   if (lowerSpecs.includes("ddr4")) return "DDR4";
@@ -45,6 +48,7 @@ const parseMemoryType = (specs: string): string | null => {
 };
 
 const parseFormFactor = (specs: string): string[] => {
+    if (!specs) return [];
     const lowerSpecs = specs.toLowerCase();
     const factors: string[] = [];
     if (lowerSpecs.includes("atx")) factors.push("ATX");
@@ -54,6 +58,7 @@ const parseFormFactor = (specs: string): string[] => {
 }
 
 const estimatePowerConsumption = (category: string, name: string): number => {
+    if (!name) return 0;
     const lowerName = name.toLowerCase();
     if (category === 'cpu') {
         if (lowerName.includes('i9') || lowerName.includes('ryzen 9')) return 150;
@@ -70,6 +75,8 @@ const estimatePowerConsumption = (category: string, name: string): number => {
         return 200;
     }
     if (category === 'ram' || category === 'storage') return 10;
+    if (category === 'motherboard') return 50;
+    if (category === 'cooling') return 15;
     return 0;
 }
 
@@ -109,6 +116,10 @@ export async function GET(request: Request) {
           psuWattage = parseWattage(specs, name);
       }
 
+      // ** THE FIX IS HERE **
+      // Ensure price is parsed correctly as an integer.
+      const price = parseInt(String(item.price_bdt).replace(/,/g, ''), 10) || 0;
+
       return {
         id: `${category}-${item.id}`,
         name: name,
@@ -123,7 +134,7 @@ export async function GET(request: Request) {
           {
             retailerId: "startech",
             retailerName: "StarTech",
-            price: parseInt(item.price_bdt) || 0,
+            price: price, // Use the correctly parsed price
             currency: "BDT",
             inStock: item.availability?.toLowerCase() !== "out of stock",
             lastUpdated: new Date(),
