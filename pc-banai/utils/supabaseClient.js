@@ -1,0 +1,5 @@
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(process.env.postgresql://postgres.gsjfvxlyjjprisfskhfz:Higalaxy3!@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres, process.env.eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdzamZ2eGx5ampwcmlzZnNraGZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIyNjUwMTYsImV4cCI6MjA2Nzg0MTAxNn0.Jx3O6M5abxc5Nz1hJBNWh0pRy4cY7uO42JdJFQ9FKFE)
+
+export default supabase
