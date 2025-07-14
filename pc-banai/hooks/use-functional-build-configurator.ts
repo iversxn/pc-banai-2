@@ -3,7 +3,7 @@
 "use client"
 
 import { useState, useCallback, useEffect, useMemo } from "react"
-import type { Component, BuildState, ComponentSelection, CompatibilityCheck, CompatibilityError, CompatibilityWarning } from "@/types"
+import { type Component, type BuildState, type ComponentSelection, type CompatibilityCheck, type CompatibilityError, type CompatibilityWarning } from "@/types"
 
 export function useFunctionalBuildConfigurator() {
   const [allComponents, setAllComponents] = useState<Component[]>([]);
@@ -39,11 +39,11 @@ export function useFunctionalBuildConfigurator() {
     fetchComponents();
   }, []);
 
-  const calculateRealPrice = useCallback((components: ComponentSelection): number => {
-    let total = 0
-    Object.values(components).forEach((component) => {
-      if (!component) return;
-      const items = Array.isArray(component) ? component : [component];
+  const calculateTotalPrice = useCallback((components: ComponentSelection): number => {
+    let total = 0;
+    Object.values(components).forEach((componentOrArray) => {
+      if (!componentOrArray) return;
+      const items = Array.isArray(componentOrArray) ? componentOrArray : [componentOrArray];
       items.forEach((item) => {
         if (item.prices && item.prices.length > 0) {
           const bestPrice = Math.min(...item.prices.map((p) => p.price));
@@ -54,69 +54,110 @@ export function useFunctionalBuildConfigurator() {
     return total;
   }, []);
 
-  const calculateRealWattage = useCallback((components: ComponentSelection): number => {
-    let wattage = 0
-    Object.values(components).forEach((component) => {
-        if (!component) return;
-        const items = Array.isArray(component) ? component : [component];
-        items.forEach((item) => {
-            wattage += item.powerConsumption || 0;
-        });
+  const calculateTotalWattage = useCallback((components: ComponentSelection): number => {
+    let wattage = 0;
+    Object.values(components).forEach((componentOrArray) => {
+      if (!componentOrArray) return;
+      const items = Array.isArray(componentOrArray) ? componentOrArray : [componentOrArray];
+      items.forEach((item) => {
+        wattage += item.powerConsumption || 0;
+      });
     });
     return wattage;
   }, []);
 
-  const checkRealCompatibility = useCallback(
+  const checkCompatibility = useCallback(
     (components: ComponentSelection): CompatibilityCheck => {
-      const warnings: CompatibilityWarning[] = [];
       const errors: CompatibilityError[] = [];
+      const warnings: CompatibilityWarning[] = [];
+      const { cpu, motherboard, ram, psu, case: pcCase } = components;
 
-      if (components.cpu && components.motherboard) {
-        if (components.cpu.socket !== components.motherboard.socket) {
-          errors.push({
-            type: "socket_mismatch",
-            message: `CPU socket ${components.cpu.socket} incompatible with motherboard socket ${components.motherboard.socket}`,
-            messageBengali: `সিপিইউ সকেট ${components.cpu.socket} মাদারবোর্ড সকেট ${components.motherboard.socket} এর সাথে সামঞ্জস্যপূর্ণ নয়`,
-            components: ["cpu", "motherboard"],
-          });
-        }
+      // 1. CPU and Motherboard Socket
+      if (cpu && motherboard && cpu.socket && motherboard.socket && cpu.socket !== motherboard.socket) {
+        errors.push({
+          type: "socket_mismatch",
+          message: `CPU socket (${cpu.socket}) is not compatible with motherboard socket (${motherboard.socket}).`,
+          messageBengali: `সিপিইউ সকেট (${cpu.socket}) মাদারবোর্ড সকেট (${motherboard.socket}) এর সাথে সামঞ্জস্যপূর্ণ নয়।`,
+          components: ["cpu", "motherboard"],
+        });
       }
 
-      if (components.ram && components.motherboard && Array.isArray(components.ram) && components.ram.length > 0) {
-        const ramType = components.ram[0].memoryType;
-        if (ramType !== components.motherboard.memoryType) {
-          errors.push({
-            type: "memory_type_mismatch",
-            message: `RAM type ${ramType} incompatible with motherboard memory type ${components.motherboard.memoryType}`,
-            messageBengali: `র্যামের ধরন ${ramType} মাদারবোর্ডের মেমরি টাইপ ${components.motherboard.memoryType} এর সাথে সামঞ্জস্যপূর্ণ নয়`,
-            components: ["ram", "motherboard"],
-          });
-        }
+      // 2. RAM and Motherboard Memory Type
+      if (ram && ram.length > 0 && motherboard && motherboard.memoryType) {
+        ram.forEach(ramStick => {
+          if (ramStick.memoryType && ramStick.memoryType !== motherboard.memoryType) {
+            errors.push({
+              type: "memory_type_mismatch",
+              message: `RAM type (${ramStick.memoryType}) is not compatible with motherboard memory type (${motherboard.memoryType}).`,
+              messageBengali: `র্যামের ধরন (${ramStick.memoryType}) মাদারবোর্ডের মেমরি টাইপ (${motherboard.memoryType}) এর সাথে সামঞ্জস্যপূর্ণ নয়।`,
+              components: ["ram", "motherboard"],
+            });
+          }
+        });
       }
       
-      return { isCompatible: errors.length === 0, warnings, errors };
+      // 3. Motherboard and Case Form Factor
+      if (motherboard && pcCase && motherboard.formFactor && pcCase.compatibility?.formFactor) {
+        if (!pcCase.compatibility.formFactor.some(factor => factor === motherboard.formFactor)) {
+            errors.push({
+                type: 'form_factor_mismatch',
+                message: `Motherboard form factor (${motherboard.formFactor}) may not fit in the selected case.`,
+                messageBengali: `মাদারবোর্ডের ফর্ম ফ্যাক্টর (${motherboard.formFactor}) নির্বাচিত কেসে ফিট নাও হতে পারে।`,
+                components: ['motherboard', 'case'],
+            });
+        }
+      }
+
+      // 4. PSU Wattage Warning
+      const requiredWattage = calculateTotalWattage(components);
+      if (psu && psu.specifications.wattage) {
+        const psuCapacity = psu.specifications.wattage as number;
+        if (requiredWattage > psuCapacity) {
+          errors.push({
+            type: 'insufficient_power',
+            message: `PSU capacity (${psuCapacity}W) is less than the estimated requirement (${requiredWattage}W).`,
+            messageBengali: `পিএসইউ ক্ষমতা (${psuCapacity}W) আনুমানিক প্রয়োজনীয়তা (${requiredWattage}W) থেকে কম।`,
+            components: ['psu'],
+          });
+        } else if (requiredWattage > psuCapacity * 0.85) {
+          warnings.push({
+            type: 'power_supply_warning',
+            message: `Build is close to the PSU's limit (${psuCapacity}W). A higher wattage PSU is recommended for future upgrades.`,
+            messageBengali: `বিল্ডটি পিএসইউ এর ক্ষমতার (${psuCapacity}W) কাছাকাছি। ভবিষ্যতের আপগ্রেডের জন্য উচ্চ ওয়াটের পিএসইউ সুপারিশ করা হচ্ছে।`,
+            components: ['psu'],
+          });
+        }
+      } else if (requiredWattage > 0) {
+          warnings.push({
+              type: 'psu_missing',
+              message: 'A Power Supply Unit (PSU) has not been selected.',
+              messageBengali: 'পাওয়ার সাপ্লাই ইউনিট (পিএসইউ) নির্বাচন করা হয়নি।',
+              components: ['psu'],
+          });
+      }
+
+      return { isCompatible: errors.length === 0, errors, warnings };
     },
-    []
+    [calculateTotalWattage]
   );
 
   useEffect(() => {
     setIsCalculating(true);
-    const newPrice = calculateRealPrice(selectedComponents);
-    const newWattage = calculateRealWattage(selectedComponents);
-    const newCompatibility = checkRealCompatibility(selectedComponents);
+    const newPrice = calculateTotalPrice(selectedComponents);
+    const newWattage = calculateTotalWattage(selectedComponents);
+    const newCompatibility = checkCompatibility(selectedComponents);
 
     setTotalPrice(newPrice);
     setTotalWattage(newWattage);
     setCompatibility(newCompatibility);
     setIsCalculating(false);
-  }, [selectedComponents, calculateRealPrice, calculateRealWattage, checkRealCompatibility]);
+  }, [selectedComponents, calculateTotalPrice, calculateTotalWattage, checkCompatibility]);
 
   const selectComponent = useCallback((component: Component) => {
-    setSelectedComponents((prev) => {
+    setSelectedComponents(prev => {
       const newSelection = { ...prev };
       const category = component.category as keyof ComponentSelection;
-
-      if (category === "ram" || category === "storage") {
+      if (category === 'ram' || category === 'storage') {
         const existing = (newSelection[category] as Component[]) || [];
         if (!existing.some(c => c.id === component.id)) {
           newSelection[category] = [...existing, component];
@@ -129,21 +170,14 @@ export function useFunctionalBuildConfigurator() {
   }, []);
 
   const removeComponent = useCallback((componentId: string, category: keyof ComponentSelection) => {
-    setSelectedComponents((prev) => {
+    setSelectedComponents(prev => {
       const newSelection = { ...prev };
-      const componentInCategory = newSelection[category];
-
-      if (Array.isArray(componentInCategory)) {
-        const updatedCategory = componentInCategory.filter(c => c.id !== componentId);
-        if (updatedCategory.length > 0) {
-          newSelection[category] = updatedCategory;
-        } else {
-          delete newSelection[category];
-        }
-      } else {
-        if (componentInCategory?.id === componentId) {
-          delete newSelection[category];
-        }
+      const current = newSelection[category];
+      if (Array.isArray(current)) {
+        const filtered = current.filter(c => c.id !== componentId);
+        newSelection[category] = filtered.length > 0 ? filtered : undefined;
+      } else if (current?.id === componentId) {
+        delete newSelection[category];
       }
       return newSelection;
     });
@@ -171,18 +205,19 @@ export function useFunctionalBuildConfigurator() {
   const getCompatibleComponents = useCallback(
     (category: keyof ComponentSelection): Component[] => {
       if (isLoading) return [];
+      const { cpu, motherboard } = selectedComponents;
 
-      const categoryComponents = allComponents.filter((c) => c.category === category);
+      return allComponents.filter((component) => {
+        if (component.category !== category) return false;
 
-      return categoryComponents.filter((component) => {
-        if (category === "cpu" && selectedComponents.motherboard) {
-          return component.socket === selectedComponents.motherboard.socket;
+        if (category === 'motherboard' && cpu?.socket) {
+          return component.socket === cpu.socket;
         }
-        if (category === "motherboard" && selectedComponents.cpu) {
-          return component.socket === selectedComponents.cpu.socket;
+        if (category === 'cpu' && motherboard?.socket) {
+          return component.socket === motherboard.socket;
         }
-        if (category === "ram" && selectedComponents.motherboard) {
-          return component.memoryType === selectedComponents.motherboard.memoryType;
+        if (category === 'ram' && motherboard?.memoryType) {
+          return component.memoryType === motherboard.memoryType;
         }
         return true;
       });
