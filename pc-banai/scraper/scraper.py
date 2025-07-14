@@ -91,11 +91,10 @@ def scrape_category(category, base_url):
 
     return data
 
-def create_table_if_not_exists(engine):
-    create_query = """
-    CREATE TABLE IF NOT EXISTS pc_components (
+def create_table_if_not_exists(engine, table_name):
+    query = f"""
+    CREATE TABLE IF NOT EXISTS {table_name} (
         id SERIAL PRIMARY KEY,
-        category TEXT,
         product_name TEXT NOT NULL,
         price_bdt TEXT,
         product_url TEXT UNIQUE,
@@ -107,24 +106,37 @@ def create_table_if_not_exists(engine):
     );
     """
     with engine.connect() as conn:
-        conn.execute(text(create_query))
-        print("✅ Table 'pc_components' ensured in Supabase.")
+        conn.execute(text(query))
+        print(f"✅ Table '{table_name}' ready in Supabase.")
 
-def insert_into_supabase(all_data):
+
+def insert_into_supabase(category, data):
     engine = create_engine(SUPABASE_DB_URL)
-    create_table_if_not_exists(engine)
+    table_name = category_to_table_name(category)
+    create_table_if_not_exists(engine, table_name)
 
-    df = pd.DataFrame(all_data)
+    df = pd.DataFrame(data)
     df.drop_duplicates(subset=['product_url'], inplace=True)
 
-    df.to_sql('pc_components', engine, if_exists='append', index=False)
-    print(f"✅ Uploaded {len(df)} new items to Supabase.")
+    df.to_sql(table_name, engine, if_exists='append', index=False)
+    print(f"✅ Uploaded {len(df)} items to '{table_name}' table.")
 
+def category_to_table_name(category):
+    return {
+        "processor": "processors",
+        "cpu_cooler": "cpu_coolers",
+        "motherboard": "motherboards",
+        "graphics_card": "graphics_cards",
+        "ram": "rams",
+        "power_supply": "power_supplies",
+        "hard_disk_drive": "hdds",
+        "ssd": "ssd_drives",
+        "casing": "casings",
+        "casing_cooler": "casing_coolers"
+    }[category]
+    
 if __name__ == '__main__':
-    all_data = []
-
     for category, url in CATEGORIES.items():
-        category_data = scrape_category(category, url)
-        all_data.extend(category_data)
-
-    insert_into_supabase(all_data)
+        data = scrape_category(category, url)
+        if data:
+            insert_into_supabase(category, data)
