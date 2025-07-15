@@ -30,9 +30,9 @@ export function ComponentSelector({ category, components, selectedComponent, onS
         </div>
       ) : (
         components.map((component) => {
-          const inStockPrices = component.prices.filter(p => p.price > 0)
-          const bestPrice = inStockPrices.length > 0 ? Math.min(...inStockPrices.map(p => p.price)) : 0
-          const bestPriceRetailer = component.prices.find((p) => p.price === bestPrice)
+          const validPrices = component.prices.filter(p => p.price > 0)
+          const bestPrice = validPrices.length ? Math.min(...validPrices.map((p) => p.price)) : 0
+          const bestRetailer = component.prices.find(p => p.price === bestPrice)
 
           return (
             <Card
@@ -48,50 +48,45 @@ export function ComponentSelector({ category, components, selectedComponent, onS
                     </div>
                     <p className="text-sm text-blue-600 mb-2">{component.nameBengali}</p>
 
-                    {/* Key Specifications */}
                     <div className="flex flex-wrap gap-1 mb-3">
-                      {Object.entries(component.specifications)
-                        .slice(0, 3)
-                        .map(([key, value]) => (
-                          <Badge key={key} variant="secondary" className="text-xs">
-                            {String(value)}
-                          </Badge>
-                        ))}
+                      {Object.entries(component.specifications).slice(0, 3).map(([key, value]) => (
+                        <Badge key={key} variant="secondary" className="text-xs">{String(value)}</Badge>
+                      ))}
                     </div>
 
-                    {/* Price Information */}
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="text-lg font-bold text-green-600">৳{bestPrice.toLocaleString()}</div>
-                        <div className="text-xs text-gray-500">
-                          at {bestPriceRetailer?.retailerName}
-                          <div className="flex items-center gap-1 mt-1">
-                            <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                            <span>{bestPriceRetailer?.rating}</span>
-                            {bestPriceRetailer?.trend === "down" && <TrendingDown className="h-3 w-3 text-green-600" />}
-                            {bestPriceRetailer?.trend === "up" && <TrendingUp className="h-3 w-3 text-red-600" />}
+                        {bestPrice > 0 ? (
+                          <div className="text-lg font-bold text-green-600">৳{bestPrice.toLocaleString()}</div>
+                        ) : (
+                          <div className="text-lg font-bold text-red-600">Out of Stock</div>
+                        )}
+                        {bestRetailer && (
+                          <div className="text-xs text-gray-500">
+                            at {bestRetailer.retailerName}
+                            <div className="flex items-center gap-1 mt-1">
+                              <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                              <span>{bestRetailer.rating}</span>
+                              {bestRetailer.trend === "down" && <TrendingDown className="h-3 w-3 text-green-600" />}
+                              {bestRetailer.trend === "up" && <TrendingUp className="h-3 w-3 text-red-600" />}
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
 
-                      <div className="flex flex-col gap-2">
-                        <Button
-                          size="sm"
-                          variant={isSelected(component) ? "default" : "outline"}
-                          onClick={() => onSelect(isSelected(component) ? null : component)}
-                        >
-                          {isSelected(component) ? "Selected" : "Select"}
-                        </Button>
-                        <Button size="sm" variant="ghost" className="text-xs">
-                          Compare
-                        </Button>
-                      </div>
+                      <Button
+                        size="sm"
+                        variant={isSelected(component) ? "default" : "outline"}
+                        onClick={() => onSelect(isSelected(component) ? null : component)}
+                      >
+                        {isSelected(component) ? "Selected" : "Select"}
+                      </Button>
                     </div>
                   </div>
                 </div>
               </CardContent>
             </Card>
-          )
+          );
         })
       )}
     </div>
