@@ -62,19 +62,18 @@ export function AdvancedFilters() {
             In Stock Only
           </Label>
         </div>
-
-        <Select value={filters.sortBy} onValueChange={(value) => updateFilter("sortBy", value as any)}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="price">Price</SelectItem>
-            <SelectItem value="name">Name</SelectItem>
-            <SelectItem value="rating">Rating</SelectItem>
-            <SelectItem value="popularity">Popularity</SelectItem>
-            <SelectItem value="newest">Newest</SelectItem>
-          </SelectContent>
-        </Select>
+<Select value={filters.sortBy} onValueChange={(value) => updateFilter("sortBy", value as any)}>
+  <SelectTrigger className="w-40">
+    <SelectValue placeholder="Sort By" />
+  </SelectTrigger>
+  <SelectContent>
+    <SelectItem value="price">Price</SelectItem>
+    <SelectItem value="name">Name</SelectItem>
+    <SelectItem value="rating">Rating</SelectItem>
+    <SelectItem value="popularity">Popularity</SelectItem>
+    <SelectItem value="stock">Availability</SelectItem>
+  </SelectContent>
+</Select>
 
         <Button
           variant="outline"
