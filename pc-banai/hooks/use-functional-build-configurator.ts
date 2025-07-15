@@ -202,28 +202,23 @@ export function useFunctionalBuildConfigurator() {
     return shareUrl;
   }, [selectedComponents, totalPrice, compatibility, totalWattage]);
 
-  const getCompatibleComponents = useCallback(
-    (category: keyof ComponentSelection): Component[] => {
-      if (isLoading) return [];
-      const { cpu, motherboard } = selectedComponents;
+  const getCompatibleComponents = (category: string): Component[] => {
+  if (category === "motherboard" && selectedComponents.cpu) {
+    const cpuSocket = selectedComponents.cpu.socket
+    return allComponents
+      .filter((c) => c.category === "motherboard")
+      .filter((mb) => mb.socket && cpuSocket && mb.socket === cpuSocket)
+  }
 
-      return allComponents.filter((component) => {
-        if (component.category !== category) return false;
+  if (category === "cpu" && selectedComponents.motherboard) {
+    const mbSocket = selectedComponents.motherboard.socket
+    return allComponents
+      .filter((c) => c.category === "cpu")
+      .filter((cpu) => cpu.socket && mbSocket && cpu.socket === mbSocket)
+  }
 
-        if (category === 'motherboard' && cpu?.socket) {
-          return component.socket === cpu.socket;
-        }
-        if (category === 'cpu' && motherboard?.socket) {
-          return component.socket === motherboard.socket;
-        }
-        if (category === 'ram' && motherboard?.memoryType) {
-          return component.memoryType === motherboard.memoryType;
-        }
-        return true;
-      });
-    },
-    [isLoading, allComponents, selectedComponents]
-  );
+  return allComponents.filter((c) => c.category === category)
+}
 
   const buildState: BuildState = useMemo(
     () => ({
