@@ -28,7 +28,15 @@ export function AdvancedFilters() {
   } = useAdvancedFilters()
 
   const [showAdvanced, setShowAdvanced] = useState(false)
-
+  
+  if (filters.sortBy === "stock") {
+  filtered.sort((a, b) => {
+    const aStock = a.prices.some(p => p.price > 0)
+    const bStock = b.prices.some(p => p.price > 0)
+    return filters.sortOrder === "asc" ? Number(aStock) - Number(bStock) : Number(bStock) - Number(aStock)
+  })
+}
+  
   if (isLoading) {
     return (
         <div className="space-y-6">
