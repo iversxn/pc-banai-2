@@ -189,17 +189,28 @@ export function useFunctionalBuildConfigurator() {
     return url
   }, [selectedComponents, totalPrice, compatibility, totalWattage])
 
-  const getCompatibleComponents = useCallback((category: keyof ComponentSelection): Component[] => {
-    if (isLoading) return []
-    return allComponents.filter((c) => {
-      if (c.category !== category) return false
-      const cpu = selectedComponents.cpu
-      const mb = selectedComponents.motherboard
-      if (category === "motherboard" && cpu?.socket) return c.socket === cpu.socket
-      if (category === "cpu" && mb?.socket) return c.socket === mb.socket
-      return true
-    })
-  }, [selectedComponents, allComponents, isLoading])
+ const getCompatibleComponents = useCallback((category: keyof ComponentSelection): Component[] => {
+  if (isLoading) return []
+
+  return allComponents.filter((component) => {
+    if (component.category !== category) return false
+
+    const cpu = selectedComponents.cpu
+    const motherboard = selectedComponents.motherboard
+
+    if (category === "motherboard" && cpu?.socket) {
+      // ✅ Show motherboards only if their socket matches CPU's socket
+      return component.socket === cpu.socket
+    }
+
+    if (category === "cpu" && motherboard?.socket) {
+      // ✅ Show CPUs only if their socket matches motherboard's
+      return component.socket === motherboard.socket
+    }
+
+    return true
+  })
+}, [selectedComponents, allComponents, isLoading])
 
   const buildState: BuildState = useMemo(() => ({
     components: selectedComponents,
