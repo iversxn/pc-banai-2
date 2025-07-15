@@ -30,7 +30,8 @@ export function ComponentSelector({ category, components, selectedComponent, onS
         </div>
       ) : (
         components.map((component) => {
-          const bestPrice = Math.min(...component.prices.map((p) => p.price))
+          const inStockPrices = component.prices.filter(p => p.price > 0)
+          const bestPrice = inStockPrices.length > 0 ? Math.min(...inStockPrices.map(p => p.price)) : 0
           const bestPriceRetailer = component.prices.find((p) => p.price === bestPrice)
 
           return (
