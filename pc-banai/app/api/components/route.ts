@@ -1,168 +1,128 @@
-// pc-banai/app/api/components/route.ts
+import { NextResponse } from "next/server"
+import supabase from "@/utils/supabaseClient"
 
-import { NextResponse } from "next/server";
-import supabase from "@/utils/supabaseClient";
+// ISR for API (Next.js app router)
+export const revalidate = 1800 // 30 minutes
 
+// Map app categories -> table names in your Supabase.
+// Adjust any table names if different in your project.
 const CATEGORY_TABLES: Record<string, string> = {
   cpu: "processors",
-  gpu: "graphics_cards",
   motherboard: "motherboards",
   ram: "rams",
-  storage: "ssd_drives",
+  gpu: "graphics_cards",
+  storage_ssd: "ssd_drives",      // if your table is "ssd", set here
+  storage_hdd: "hdds",            // if "hard_disk_drive", set here
   psu: "power_supplies",
   case: "casings",
-  cooling: "cpu_coolers",
-};
-
-// --- Data Parsing Helpers ---
-const findSpec = (specs: string, key: string): string | null => {
-  if (!specs) return null;
-  const regex = new RegExp(`${key}[^:]*:\\s*([^|]+)`, 'i');
-  const match = specs.match(regex);
-  if (match && match[1]) {
-    return match[1].split(',')[0].trim();
-  }
-  return null;
-};
-
-const parseWattage = (specs: string, name: string): number => {
-  if (!specs && !name) return 0;
-  const combinedText = `${specs || ''} ${name || ''}`.toLowerCase();
-  const wattageMatch = combinedText.match(/(\d+)\s*w/);
-  if (wattageMatch && wattageMatch[1]) {
-    const watts = parseInt(wattageMatch[1], 10);
-    if (watts > 10 && watts < 3000) {
-      return watts;
-    }
-  }
-  return 0;
-};
-
-const parseMemoryType = (specs: string): string | null => {
-  if (!specs) return null;
-  const lowerSpecs = specs.toLowerCase();
-  if (lowerSpecs.includes("ddr5")) return "DDR5";
-  if (lowerSpecs.includes("ddr4")) return "DDR4";
-  if (lowerSpecs.includes("ddr3")) return "DDR3";
-  return null;
-};
-
-const parseFormFactor = (specs: string): string[] => {
-    if (!specs) return [];
-    const lowerSpecs = specs.toLowerCase();
-    const factors: string[] = [];
-    if (lowerSpecs.includes("atx")) factors.push("ATX");
-    if (lowerSpecs.includes("micro-atx") || lowerSpecs.includes("micro atx")) factors.push("Micro-ATX");
-    if (lowerSpecs.includes("mini-itx") || lowerSpecs.includes("mini itx")) factors.push("Mini-ITX");
-    return factors;
+  cooling_cpu: "cpu_coolers",
+  cooling_case: "casing_coolers",
 }
 
-const estimatePowerConsumption = (category: string, name: string): number => {
-    if (!name) return 0;
-    const lowerName = name.toLowerCase();
-    if (category === 'cpu') {
-        if (lowerName.includes('i9') || lowerName.includes('ryzen 9')) return 150;
-        if (lowerName.includes('i7') || lowerName.includes('ryzen 7')) return 125;
-        if (lowerName.includes('i5') || lowerName.includes('ryzen 5')) return 95;
-        if (lowerName.includes('i3') || lowerName.includes('ryzen 3')) return 65;
-        return 80;
-    }
-    if (category === 'gpu') {
-        if (lowerName.includes('4090') || lowerName.includes('7900 xtx')) return 450;
-        if (lowerName.includes('4080') || lowerName.includes('7900 xt')) return 320;
-        if (lowerName.includes('4070') || lowerName.includes('7800 xt')) return 250;
-        if (lowerName.includes('4060') || lowerName.includes('7700 xt')) return 160;
-        return 200;
-    }
-    if (category === 'ram' || category === 'storage') return 10;
-    if (category === 'motherboard') return 50;
-    if (category === 'cooling') return 15;
-    return 0;
-}
+// Normalize a row from any category table into the Component shape.
+function normalizeRow(categoryKey: string, row: any) {
+  const priceNumber = Number(String(row.price_bdt || "0").replace(/[^0-9]/g, "")) || 0
+  const inStockFlag =
+    priceNumber > 0 ||
+    (row.availability && String(row.availability).toLowerCase().includes("in stock"))
 
+  // Put single retailer (StarTech) as baseline.
+  // If you later add more retailers to your DB, extend this array accordingly.
+  const prices = [
+    {
+      retailerId: "startech",
+      retailerName: "StarTech",
+      price: priceNumber,
+      currency: "BDT",
+      inStock: inStockFlag,
+      productUrl: row.product_url || null,
+      lastUpdated: new Date().toISOString(),
+      shippingCost: 0,
+      warranty: null,
+      rating: null,
+      trend: "stable",
+    },
+  ]
+
+  // Map categoryKey to app category values your UI uses
+  const categoryMap: Record<string, string> = {
+    cpu: "cpu",
+    motherboard: "motherboard",
+    ram: "ram",
+    gpu: "gpu",
+    storage_ssd: "storage",
+    storage_hdd: "storage",
+    psu: "psu",
+    case: "case",
+    cooling_cpu: "cooling",
+    cooling_case: "cooling",
+  }
+
+  return {
+    id: `${categoryKey}-${row.id || row.product_url || row.product_name}`,
+    name: row.product_name || "Unknown",
+    nameBengali: row.product_name || "অজানা",
+    brand: row.brand || "N/A",
+    category: categoryMap[categoryKey],
+    specifications: { summary: row.short_specs || "" },
+    compatibility: {},
+
+    // Pricing from this and (later) other retailers
+    prices,
+
+    images: row.image_url ? [row.image_url] : [],
+    powerConsumption: Number(row.power_consumption || 0) || 0,
+    socket: row.socket || null,
+    memoryType: row.memory_type || null,
+    formFactor: row.form_factor || null,
+    reviews: [],
+  }
+}
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const categoryParam = searchParams.get("category");
+  try {
+    const { searchParams } = new URL(request.url)
+    const categoryParam = searchParams.get("category") // e.g. "cpu" or "motherboard"
 
-  const categoriesToFetch = categoryParam
-    ? [categoryParam]
-    : Object.keys(CATEGORY_TABLES);
+    // Build query list based on param
+    const categoryKeys = categoryParam
+      ? Object.keys(CATEGORY_TABLES).filter((k) => {
+          const mapped = {
+            cpu: ["cpu"],
+            motherboard: ["motherboard"],
+            ram: ["ram"],
+            gpu: ["gpu"],
+            storage: ["storage_ssd", "storage_hdd"],
+            psu: ["psu"],
+            case: ["case"],
+            cooling: ["cooling_cpu", "cooling_case"],
+          } as Record<string, string[]>
 
-  const allComponents: any[] = [];
+          return mapped[categoryParam]?.includes(k)
+        })
+      : Object.keys(CATEGORY_TABLES)
 
-  for (const category of categoriesToFetch) {
-    const table = CATEGORY_TABLES[category];
-    if (!table) continue;
+    const results: any[] = []
 
-    const { data, error } = await supabase.from(table).select("*");
-
-    if (error) {
-      console.error(`Failed to fetch ${category}:`, error);
-      continue;
+    // Fetch all tables and normalize
+    for (const key of categoryKeys) {
+      const table = CATEGORY_TABLES[key]
+      const { data, error } = await supabase.from(table).select("*")
+      if (error) {
+        console.error(`Supabase error on ${table}:`, error.message)
+        continue
+      }
+      const normalized = (data || []).map((row) => normalizeRow(key, row))
+      results.push(...normalized)
     }
 
-    const normalized = (data || []).map((item: any, index: number) => {
-      const specs = item.short_specs || "";
-      const name = item.product_name || "";
+    // If user asked "storage", merge SSD + HDD in one response category
+    // Already done by mapping category->"storage" above.
 
-      const socket = findSpec(specs, 'Socket');
-      const memoryType = parseMemoryType(specs);
-      const formFactor = parseFormFactor(specs);
-      const chipset = findSpec(specs, 'Chipset');
-      
-      let psuWattage = 0;
-      if (category === 'psu') {
-          psuWattage = parseWattage(specs, name);
-      }
-
-      // ** THE FIX IS HERE **
-      // Ensure price is parsed correctly as an integer.
-      const price = parseInt(String(item.price_bdt).replace(/,/g, ''), 10) || 0;
-
-      return {
-        id: `${category}-${item.id}`,
-        name: name,
-        nameBengali: name,
-        category,
-        brand: item.brand,
-        specifications: {
-          summary: specs,
-          ...(category === 'psu' && { wattage: psuWattage }),
-        },
-        prices: [
-          {
-            retailerId: "startech",
-            retailerName: "StarTech",
-            price: price, // Use the correctly parsed price
-            currency: "BDT",
-            inStock: item.availability?.toLowerCase() !== "out of stock",
-            lastUpdated: new Date(),
-            shippingCost: 0,
-            warranty: "N/A",
-            rating: 5,
-            trend: "stable",
-            productUrl: item.product_url,
-          },
-        ],
-        compatibility: {
-          socket: socket,
-          chipset: chipset ? [chipset] : [],
-          memoryType: memoryType ? [memoryType] : [],
-          formFactor: formFactor,
-        },
-        images: [item.image_url],
-        powerConsumption: estimatePowerConsumption(category, name),
-        socket: socket,
-        chipset: chipset,
-        memoryType: memoryType,
-        formFactor: formFactor.length > 0 ? formFactor[0] : null,
-        reviews: [],
-      };
-    });
-
-    allComponents.push(...normalized);
+    // Return unified list
+    return NextResponse.json(results, { status: 200 })
+  } catch (e: any) {
+    console.error("API /components failed:", e?.message || e)
+    return NextResponse.json({ error: "Failed to load components" }, { status: 500 })
   }
-
-  return NextResponse.json(allComponents);
 }
