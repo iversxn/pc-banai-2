@@ -1,3 +1,4 @@
+// pc-banai/hooks/use-functional-build-configurator.ts
 "use client"
 
 import { useState, useCallback, useEffect, useMemo } from "react"
@@ -30,12 +31,12 @@ export function useFunctionalBuildConfigurator() {
     const fetchComponents = async () => {
       setIsLoading(true)
       try {
-        const response = await fetch("/api/components", { next: { revalidate: 1800 } })
-        if (!response.ok) throw new Error(`API Error: ${response.statusText}`)
-        const data = await response.json()
-        setAllComponents(data)
-      } catch (error) {
-        console.error("Failed to fetch components:", error)
+        const res = await fetch("/api/components")
+        if (!res.ok) throw new Error("Failed to load components")
+        const data = await res.json()
+        setAllComponents(data || [])
+      } catch (e) {
+        console.error("Failed to fetch components:", e)
         setAllComponents([])
       } finally {
         setIsLoading(false)
@@ -44,25 +45,31 @@ export function useFunctionalBuildConfigurator() {
     fetchComponents()
   }, [])
 
-  const onlyInStock = useCallback((list: Component[]) => {
-    if (!showInStockOnly) return list
-    return list.filter((c) => c.prices?.some((p) => (p?.price || 0) > 0 && p.inStock))
-  }, [showInStockOnly])
+  const onlyInStock = useCallback(
+    (list: Component[]) => {
+      if (!showInStockOnly) return list
+      return list.filter((c) => c.prices?.some((p) => (p?.price || 0) > 0 && p.inStock))
+    },
+    [showInStockOnly]
+  )
 
-  const sortByStock = useCallback((list: Component[]) => {
-    if (stockSort === "none") return list
-    const clone = [...list]
-    const score = (c: Component) => c.prices?.some((p) => (p?.price || 0) > 0 && p.inStock) ? 1 : 0
-    clone.sort((a, b) => stockSort === "in-first" ? score(b) - score(a) : score(a) - score(b))
-    return clone
-  }, [stockSort])
+  const sortByStock = useCallback(
+    (list: Component[]) => {
+      if (stockSort === "none") return list
+      const clone = [...list]
+      const score = (c: Component) => (c.prices?.some((p) => (p?.price || 0) > 0 && p.inStock) ? 1 : 0)
+      clone.sort((a, b) => (stockSort === "in-first" ? score(b) - score(a) : score(a) - score(b)))
+      return clone
+    },
+    [stockSort]
+  )
 
   const calculateTotalPrice = useCallback((components: ComponentSelection): number => {
     let total = 0
-    Object.values(components).forEach((item) => {
-      const arr = Array.isArray(item) ? item : [item]
-      arr.forEach((c) => {
-        const valid = c.prices?.filter((p) => (p.price || 0) > 0) || []
+    Object.values(components).forEach((c) => {
+      const arr = Array.isArray(c) ? c : [c]
+      arr.forEach((item) => {
+        const valid = item.prices?.filter((p) => (p.price || 0) > 0) || []
         if (valid.length) total += Math.min(...valid.map((p) => p.price))
       })
     })
@@ -85,17 +92,26 @@ export function useFunctionalBuildConfigurator() {
     const warnings: CompatibilityWarning[] = []
     const { cpu, motherboard, ram, psu, case: pcCase } = components
 
-    // CPU ↔ Motherboard socket
-    if (cpu && motherboard && cpu.socket && motherboard.socket && cpu.socket !== motherboard.socket) {
-      errors.push({
-        type: "socket_mismatch",
-        message: `CPU socket (${cpu.socket}) is not compatible with motherboard socket (${motherboard.socket}).`,
-        messageBengali: `সিপিইউ সকেট (${cpu.socket}) মাদারবোর্ড সকেট (${motherboard.socket}) এর সাথে সামঞ্জস্যপূর্ণ নয়।`,
-        components: ["cpu", "motherboard"],
-      })
+    if (cpu && motherboard) {
+      if (cpu.socket && motherboard.socket) {
+        if (cpu.socket !== motherboard.socket) {
+          errors.push({
+            type: "socket_mismatch",
+            message: `CPU socket (${cpu.socket}) is not compatible with motherboard socket (${motherboard.socket}).`,
+            messageBengali: `সিপিইউ সকেট (${cpu.socket}) মাদারবোর্ড সকেট (${motherboard.socket}) এর সাথে সামঞ্জস্যপূর্ণ নয়।`,
+            components: ["cpu", "motherboard"],
+          })
+        }
+      } else {
+        warnings.push({
+          type: "socket_unknown",
+          message: "Socket info missing for CPU or motherboard; compatibility cannot be guaranteed.",
+          messageBengali: "সিপিইউ বা মাদারবোর্ডের সকেট তথ্য নেই; সামঞ্জস্য নিশ্চিত করা যাচ্ছে না।",
+          components: ["cpu", "motherboard"],
+        })
+      }
     }
 
-    // RAM ↔ Motherboard memory type
     if (ram && ram.length > 0 && motherboard?.memoryType) {
       ram.forEach((r) => {
         if (r.memoryType && r.memoryType !== motherboard.memoryType) {
@@ -109,7 +125,6 @@ export function useFunctionalBuildConfigurator() {
       })
     }
 
-    // Motherboard ↔ Case form factor
     if (motherboard?.formFactor && pcCase?.compatibility?.formFactor) {
       if (!pcCase.compatibility.formFactor.includes(motherboard.formFactor)) {
         errors.push({
@@ -121,7 +136,6 @@ export function useFunctionalBuildConfigurator() {
       }
     }
 
-    // PSU wattage
     const requiredWattage = calculateTotalWattage(components)
     if (psu?.specifications?.wattage) {
       const available = psu.specifications.wattage as number
@@ -166,10 +180,7 @@ export function useFunctionalBuildConfigurator() {
       const cat = component.category as keyof ComponentSelection
       if (cat === "ram" || cat === "storage") {
         const existing = Array.isArray(next[cat]) ? next[cat] : []
-        // prevent duplicates
-        if (!existing.some((x) => x.id === component.id)) {
-          next[cat] = [...existing, component]
-        }
+        if (!existing.some((x) => x.id === component.id)) next[cat] = [...existing, component]
       } else {
         next[cat] = component
       }
@@ -182,8 +193,8 @@ export function useFunctionalBuildConfigurator() {
       const next = { ...prev }
       const current = next[category]
       if (Array.isArray(current)) {
-        next[category] = current.filter((c) => c.id !== componentId)
-        if ((next[category] as any[])?.length === 0) delete next[category]
+        const filtered = current.filter((c) => c.id !== componentId)
+        next[category] = filtered.length > 0 ? filtered : undefined
       } else if (current?.id === componentId) {
         delete next[category]
       }
@@ -194,21 +205,39 @@ export function useFunctionalBuildConfigurator() {
   const clearBuild = useCallback(() => setSelectedComponents({}), [])
 
   const saveBuild = useCallback(() => {
-    const buildToSave: BuildState = {
+    const build: BuildState = {
       components: selectedComponents,
       totalPrice,
       compatibility,
       wattage: totalWattage,
       selectedRetailers: {},
     }
-    setBuildHistory((prev) => [buildToSave, ...prev])
+    setBuildHistory((prev) => [build, ...prev])
     const encoded = btoa(JSON.stringify(selectedComponents))
     const url = `${window.location.origin}/build?data=${encoded}`
     navigator.clipboard.writeText(url)
     return url
   }, [selectedComponents, totalPrice, compatibility, totalWattage])
 
-  // the *fixed* compatibility lookups
+  // pick-up logic: if another page requested add via localStorage (Category page writes key)
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    try {
+      const raw = localStorage.getItem("pc-banai:add")
+      if (!raw) return
+      const payload = JSON.parse(raw)
+      const item = payload?.item ?? payload
+      if (item && typeof item === "object") {
+        // ensure item has category (some scrapers might use product_name)
+        if (!item.category && payload?.category) item.category = payload.category
+        selectComponent(item as Component)
+      }
+      localStorage.removeItem("pc-banai:add")
+    } catch (e) {
+      // ignore
+    }
+  }, [selectComponent])
+
   const getCompatibleComponents = useCallback((category: keyof ComponentSelection): Component[] => {
     let list = allComponents.filter((c) => c.category === category)
 
@@ -217,19 +246,19 @@ export function useFunctionalBuildConfigurator() {
 
     if (category === "motherboard") {
       if (cpu?.socket) {
-        list = list.filter((c) => !cpu.socket || !c.socket ? true : c.socket === cpu.socket)
+        // if CPU socket present → only motherboards matching that socket pass
+        list = list.filter((m) => !m.socket ? false : m.socket === cpu.socket)
       }
     }
 
     if (category === "cpu") {
       if (mb?.socket) {
-        list = list.filter((c) => !mb.socket || !c.socket ? true : c.socket === mb.socket)
+        list = list.filter((c) => !c.socket ? false : c.socket === mb.socket)
       }
     }
 
-    // availability filter
+    // in-stock + sort
     list = onlyInStock(list)
-    // stock sort
     list = sortByStock(list)
 
     return list
