@@ -23,12 +23,14 @@ export function useFunctionalBuildConfigurator() {
   })
   const [isCalculating, setIsCalculating] = useState(false)
   const [buildHistory, setBuildHistory] = useState<BuildState[]>([])
+  const [showInStockOnly, setShowInStockOnly] = useState(false)
+  const [stockSort, setStockSort] = useState<"none" | "in-first" | "out-first">("none")
 
   useEffect(() => {
     const fetchComponents = async () => {
       setIsLoading(true)
       try {
-        const response = await fetch("/api/components")
+        const response = await fetch("/api/components", { next: { revalidate: 1800 } })
         if (!response.ok) throw new Error(`API Error: ${response.statusText}`)
         const data = await response.json()
         setAllComponents(data)
@@ -42,13 +44,26 @@ export function useFunctionalBuildConfigurator() {
     fetchComponents()
   }, [])
 
+  const onlyInStock = useCallback((list: Component[]) => {
+    if (!showInStockOnly) return list
+    return list.filter((c) => c.prices?.some((p) => (p?.price || 0) > 0 && p.inStock))
+  }, [showInStockOnly])
+
+  const sortByStock = useCallback((list: Component[]) => {
+    if (stockSort === "none") return list
+    const clone = [...list]
+    const score = (c: Component) => c.prices?.some((p) => (p?.price || 0) > 0 && p.inStock) ? 1 : 0
+    clone.sort((a, b) => stockSort === "in-first" ? score(b) - score(a) : score(a) - score(b))
+    return clone
+  }, [stockSort])
+
   const calculateTotalPrice = useCallback((components: ComponentSelection): number => {
     let total = 0
     Object.values(components).forEach((item) => {
       const arr = Array.isArray(item) ? item : [item]
       arr.forEach((c) => {
-        const valid = c.prices?.filter(p => p.price > 0) || []
-        if (valid.length) total += Math.min(...valid.map(p => p.price))
+        const valid = c.prices?.filter((p) => (p.price || 0) > 0) || []
+        if (valid.length) total += Math.min(...valid.map((p) => p.price))
       })
     })
     return total
@@ -58,7 +73,7 @@ export function useFunctionalBuildConfigurator() {
     let wattage = 0
     Object.values(components).forEach((c) => {
       const arr = Array.isArray(c) ? c : [c]
-      arr.forEach(item => {
+      arr.forEach((item) => {
         wattage += item?.powerConsumption || 0
       })
     })
@@ -70,7 +85,7 @@ export function useFunctionalBuildConfigurator() {
     const warnings: CompatibilityWarning[] = []
     const { cpu, motherboard, ram, psu, case: pcCase } = components
 
-    // CPU ↔ Motherboard Socket Match
+    // CPU ↔ Motherboard socket
     if (cpu && motherboard && cpu.socket && motherboard.socket && cpu.socket !== motherboard.socket) {
       errors.push({
         type: "socket_mismatch",
@@ -80,9 +95,9 @@ export function useFunctionalBuildConfigurator() {
       })
     }
 
-    // RAM type match
+    // RAM ↔ Motherboard memory type
     if (ram && ram.length > 0 && motherboard?.memoryType) {
-      ram.forEach(r => {
+      ram.forEach((r) => {
         if (r.memoryType && r.memoryType !== motherboard.memoryType) {
           errors.push({
             type: "memory_type_mismatch",
@@ -106,10 +121,10 @@ export function useFunctionalBuildConfigurator() {
       }
     }
 
-    // PSU wattage check
+    // PSU wattage
     const requiredWattage = calculateTotalWattage(components)
     if (psu?.specifications?.wattage) {
-      const available = psu.specifications.wattage
+      const available = psu.specifications.wattage as number
       if (requiredWattage > available) {
         errors.push({
           type: "insufficient_power",
@@ -146,29 +161,33 @@ export function useFunctionalBuildConfigurator() {
   }, [selectedComponents, calculateTotalPrice, calculateTotalWattage, checkCompatibility])
 
   const selectComponent = useCallback((component: Component) => {
-    setSelectedComponents(prev => {
-      const newSelection = { ...prev }
+    setSelectedComponents((prev) => {
+      const next = { ...prev }
       const cat = component.category as keyof ComponentSelection
       if (cat === "ram" || cat === "storage") {
-        const existing = Array.isArray(newSelection[cat]) ? newSelection[cat] : []
-        newSelection[cat] = [...(existing || []), component]
+        const existing = Array.isArray(next[cat]) ? next[cat] : []
+        // prevent duplicates
+        if (!existing.some((x) => x.id === component.id)) {
+          next[cat] = [...existing, component]
+        }
       } else {
-        newSelection[cat] = component
+        next[cat] = component
       }
-      return newSelection
+      return next
     })
   }, [])
 
   const removeComponent = useCallback((componentId: string, category: keyof ComponentSelection) => {
-    setSelectedComponents(prev => {
-      const newSelection = { ...prev }
-      const current = newSelection[category]
+    setSelectedComponents((prev) => {
+      const next = { ...prev }
+      const current = next[category]
       if (Array.isArray(current)) {
-        newSelection[category] = current.filter(c => c.id !== componentId)
+        next[category] = current.filter((c) => c.id !== componentId)
+        if ((next[category] as any[])?.length === 0) delete next[category]
       } else if (current?.id === componentId) {
-        delete newSelection[category]
+        delete next[category]
       }
-      return newSelection
+      return next
     })
   }, [])
 
@@ -182,43 +201,50 @@ export function useFunctionalBuildConfigurator() {
       wattage: totalWattage,
       selectedRetailers: {},
     }
-    setBuildHistory(prev => [buildToSave, ...prev])
+    setBuildHistory((prev) => [buildToSave, ...prev])
     const encoded = btoa(JSON.stringify(selectedComponents))
     const url = `${window.location.origin}/build?data=${encoded}`
     navigator.clipboard.writeText(url)
     return url
   }, [selectedComponents, totalPrice, compatibility, totalWattage])
 
- const getCompatibleComponents = useCallback((category: keyof ComponentSelection): Component[] => {
-  if (isLoading) return []
-
-  return allComponents.filter((component) => {
-    if (component.category !== category) return false
+  // the *fixed* compatibility lookups
+  const getCompatibleComponents = useCallback((category: keyof ComponentSelection): Component[] => {
+    let list = allComponents.filter((c) => c.category === category)
 
     const cpu = selectedComponents.cpu
-    const motherboard = selectedComponents.motherboard
+    const mb = selectedComponents.motherboard
 
-    if (category === "motherboard" && cpu?.socket) {
-      // ✅ Show motherboards only if their socket matches CPU's socket
-      return component.socket === cpu.socket
+    if (category === "motherboard") {
+      if (cpu?.socket) {
+        list = list.filter((c) => !cpu.socket || !c.socket ? true : c.socket === cpu.socket)
+      }
     }
 
-    if (category === "cpu" && motherboard?.socket) {
-      // ✅ Show CPUs only if their socket matches motherboard's
-      return component.socket === motherboard.socket
+    if (category === "cpu") {
+      if (mb?.socket) {
+        list = list.filter((c) => !mb.socket || !c.socket ? true : c.socket === mb.socket)
+      }
     }
 
-    return true
-  })
-}, [selectedComponents, allComponents, isLoading])
+    // availability filter
+    list = onlyInStock(list)
+    // stock sort
+    list = sortByStock(list)
 
-  const buildState: BuildState = useMemo(() => ({
-    components: selectedComponents,
-    totalPrice,
-    compatibility,
-    selectedRetailers: {},
-    wattage: totalWattage,
-  }), [selectedComponents, totalPrice, compatibility, totalWattage])
+    return list
+  }, [allComponents, selectedComponents, onlyInStock, sortByStock])
+
+  const buildState: BuildState = useMemo(
+    () => ({
+      components: selectedComponents,
+      totalPrice,
+      compatibility,
+      selectedRetailers: {},
+      wattage: totalWattage,
+    }),
+    [selectedComponents, totalPrice, compatibility, totalWattage]
+  )
 
   return {
     buildState,
@@ -234,5 +260,9 @@ export function useFunctionalBuildConfigurator() {
     clearBuild,
     saveBuild,
     getCompatibleComponents,
+    showInStockOnly,
+    setShowInStockOnly,
+    stockSort,
+    setStockSort,
   }
 }
