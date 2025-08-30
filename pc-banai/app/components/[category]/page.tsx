@@ -1,46 +1,35 @@
 // app/components/[category]/page.tsx
-
-import { notFound } from "next/navigation"
 import { FunctionalComponentSelector } from "@/components/functional-component-selector"
+import supabase from "@/utils/supabaseClient"
 
-// ✅ Map slug → database category
-const categoryMap: Record<string, string> = {
-  cpu: "processor",
-  gpu: "gpu",
-  ram: "ram",
-  motherboard: "motherboard",
-  psu: "psu",
-  case: "case",
-  storage: "storage",
-  cooling: "cooling",
+interface PageProps {
+  params: {
+    category: string
+  }
 }
 
-export const revalidate = 1800 // ISR: re-generate every 30 mins
+export const revalidate = 1800 // ISR: 30 minutes
 
-async function getComponents(category: string) {
-  const res = await fetch(
-    `${process.env.NEXT_PUBLIC_SITE_URL}/api/components?category=${category}`,
-    { next: { revalidate: 1800 } }
-  )
+export default async function CategoryPage({ params }: PageProps) {
+  const { category } = params
 
-  if (!res.ok) return null
-  return res.json()
-}
+  // Fetch from API (or directly from supabase)
+  const { data, error } = await supabase
+    .from("components")
+    .select("*")
+    .eq("category", category)
 
-export default async function CategoryPage({ params }: { params: { category: string } }) {
-  const category = categoryMap[params.category]
-
-  if (!category) return notFound()
-
-  const components = await getComponents(category)
-  if (!components) return notFound()
+  if (error) {
+    console.error(error)
+    return <div>Failed to load {category}</div>
+  }
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6 capitalize">{params.category}</h1>
+      <h1 className="text-2xl font-bold mb-4">{category.toUpperCase()}</h1>
       <FunctionalComponentSelector
-        category={params.category as keyof typeof categoryMap}
-        components={components}
+        category={category}
+        components={data || []}
         selectedComponents={[]}
         onSelect={() => {}}
         onRemove={() => {}}
