@@ -4,15 +4,24 @@ import supabase from "@/utils/supabaseClient"
 // ISR for API (Next.js app router)
 export const revalidate = 1800 // 30 minutes
 
-// Map app categories -> table names in your Supabase.
-// Adjust any table names if different in your project.
-const CATEGORY_TABLES: Record<string, string> = {
+// Map app categories -> table names in your Supabase per retailer.
+// If a retailer table doesn't exist yet, we'll skip it gracefully.
+type RetailerKey = "startech" | "techland" | "ultratech" | "skyland"
+
+const RETAILERS: Record<RetailerKey, { id: RetailerKey; name: string; tableSuffix: string | null }> = {
+  startech: { id: "startech", name: "StarTech", tableSuffix: null },
+  techland: { id: "techland", name: "Techland BD", tableSuffix: "_techland" },
+  ultratech: { id: "ultratech", name: "Ultratech BD", tableSuffix: "_ultratech" },
+  skyland: { id: "skyland", name: "Skyland BD", tableSuffix: "_skyland" },
+}
+
+const BASE_CATEGORY_TABLES: Record<string, string> = {
   cpu: "processors",
   motherboard: "motherboards",
   ram: "rams",
   gpu: "graphics_cards",
-  storage_ssd: "ssd_drives",      // if your table is "ssd", set here
-  storage_hdd: "hdds",            // if "hard_disk_drive", set here
+  storage_ssd: "ssd_drives",
+  storage_hdd: "hdds",
   psu: "power_supplies",
   case: "casings",
   cooling_cpu: "cpu_coolers",
@@ -20,7 +29,7 @@ const CATEGORY_TABLES: Record<string, string> = {
 }
 
 // Normalize a row from any category table into the Component shape.
-function normalizeRow(categoryKey: string, row: any) {
+function normalizeRow(categoryKey: string, row: any, retailer: { id: RetailerKey; name: string }) {
   const priceNumber = Number(String(row.price_bdt || "0").replace(/[^0-9]/g, "")) || 0
   const inStockFlag =
     priceNumber > 0 ||
@@ -30,16 +39,16 @@ function normalizeRow(categoryKey: string, row: any) {
   // If you later add more retailers to your DB, extend this array accordingly.
   const prices = [
     {
-      retailerId: "startech",
-      retailerName: "StarTech",
+      retailerId: retailer.id,
+      retailerName: retailer.name,
       price: priceNumber,
       currency: "BDT",
       inStock: inStockFlag,
-      productUrl: row.product_url || null,
-      lastUpdated: new Date().toISOString(),
+      productUrl: row.product_url || undefined,
+      lastUpdated: new Date(),
       shippingCost: 0,
-      warranty: null,
-      rating: null,
+      warranty: "",
+      rating: 0,
       trend: "stable",
     },
   ]
@@ -59,7 +68,7 @@ function normalizeRow(categoryKey: string, row: any) {
   }
 
   return {
-    id: `${categoryKey}-${row.id || row.product_url || row.product_name}`,
+    id: `${categoryKey}-${retailer.id}-${row.id || row.product_url || row.product_name}`,
     name: row.product_name || "Unknown",
     nameBengali: row.product_name || "অজানা",
     brand: row.brand || "N/A",
@@ -86,7 +95,7 @@ export async function GET(request: Request) {
 
     // Build query list based on param
     const categoryKeys = categoryParam
-      ? Object.keys(CATEGORY_TABLES).filter((k) => {
+      ? Object.keys(BASE_CATEGORY_TABLES).filter((k) => {
           const mapped = {
             cpu: ["cpu"],
             motherboard: ["motherboard"],
@@ -100,20 +109,26 @@ export async function GET(request: Request) {
 
           return mapped[categoryParam]?.includes(k)
         })
-      : Object.keys(CATEGORY_TABLES)
+      : Object.keys(BASE_CATEGORY_TABLES)
 
     const results: any[] = []
 
-    // Fetch all tables and normalize
+    // For each category key, query each retailer's table variant and normalize
     for (const key of categoryKeys) {
-      const table = CATEGORY_TABLES[key]
-      const { data, error } = await supabase.from(table).select("*")
-      if (error) {
-        console.error(`Supabase error on ${table}:`, error.message)
-        continue
+      const baseTable = BASE_CATEGORY_TABLES[key]
+      for (const retailer of Object.values(RETAILERS)) {
+        const table = retailer.tableSuffix ? `${baseTable}${retailer.tableSuffix}` : baseTable
+        const { data, error } = await supabase.from(table).select("*")
+        if (error) {
+          // Relation might not exist yet, skip quietly in production
+          if (!/does not exist/i.test(error.message)) {
+            console.error(`Supabase error on ${table}:`, error.message)
+          }
+          continue
+        }
+        const normalized = (data || []).map((row) => normalizeRow(key, row, retailer))
+        results.push(...normalized)
       }
-      const normalized = (data || []).map((row) => normalizeRow(key, row))
-      results.push(...normalized)
     }
 
     // If user asked "storage", merge SSD + HDD in one response category
