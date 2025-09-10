@@ -6,26 +6,123 @@ import pandas as pd
 import time
 import re
 from sqlalchemy import create_engine, text, inspect
+import os
 
-# Set your Supabase PostgreSQL connection URI here
-SUPABASE_DB_URL = "postgresql://postgres.gsjfvxlyjjprisfskhfz:Higalaxy3!@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
+# Read Supabase PostgreSQL connection URI from environment (GitHub Actions/hosting)
+SUPABASE_DB_URL = os.getenv("DATABASE_URL")
+if not SUPABASE_DB_URL:
+    raise RuntimeError("DATABASE_URL environment variable is required for scraper")
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
 }
 
-# Category mapping
-CATEGORIES = {
-    "processor": "https://www.startech.com.bd/component/processor",
-    "cpu_cooler": "https://www.startech.com.bd/component/CPU-Cooler",
-    "motherboard": "https://www.startech.com.bd/component/motherboard",
-    "graphics_card": "https://www.startech.com.bd/component/graphics-card",
-    "ram": "https://www.startech.com.bd/component/ram",
-    "power_supply": "https://www.startech.com.bd/component/power-supply",
-    "hard_disk_drive": "https://www.startech.com.bd/component/hard-disk-drive",
-    "ssd": "https://www.startech.com.bd/ssd",
-    "casing": "https://www.startech.com.bd/component/casing",
-    "casing_cooler": "https://www.startech.com.bd/component/casing-cooler"
+# Retailer configurations (category URLs and parsing strategies)
+RETAILERS = {
+    "startech": {
+        "name": "StarTech",
+        "table_suffix": None,
+        "categories": {
+            "processor": "https://www.startech.com.bd/component/processor",
+            "cpu_cooler": "https://www.startech.com.bd/component/CPU-Cooler",
+            "motherboard": "https://www.startech.com.bd/component/motherboard",
+            "graphics_card": "https://www.startech.com.bd/component/graphics-card",
+            "ram": "https://www.startech.com.bd/component/ram",
+            "power_supply": "https://www.startech.com.bd/component/power-supply",
+            "hard_disk_drive": "https://www.startech.com.bd/component/hard-disk-drive",
+            "ssd": "https://www.startech.com.bd/ssd",
+            "casing": "https://www.startech.com.bd/component/casing",
+            "casing_cooler": "https://www.startech.com.bd/component/casing-cooler"
+        },
+        "selectors": {
+            "card": ["div.p-item"],
+            "name": ["h4.p-item-name a"],
+            "url_attr": "href",
+            "price": ["div.p-item-price span", "span.price-new", "span.price"],
+            "stock": ["div.p-item-stock span"],
+            "brand": ["div.p-item-brand img@alt"],
+            "image": ["div.p-item-img img@data-src", "div.p-item-img img@src"],
+            "specs_list": ["div.p-item-details ul li"]
+        },
+    },
+    "techland": {
+        "name": "Techland BD",
+        "table_suffix": "_techland",
+        "categories": {
+            "processor": "https://www.techlandbd.com/pc-components/processor",
+            "cpu_cooler": "https://www.techlandbd.com/pc-components/cpu-cooler",
+            "motherboard": "https://www.techlandbd.com/pc-components/motherboard",
+            "graphics_card": "https://www.techlandbd.com/pc-components/graphics-card",
+            "ram": "https://https://www.techlandbd.com/pc-components/shop-desktop-ram",
+            "power_supply": "https://www.techlandbd.com/pc-components/power-supply",
+            "hard_disk_drive": "https://www.techlandbd.com/pc-components/hard-disk-drive",
+            "ssd": "https://www.techlandbd.com/pc-components/solid-state-drive",
+            "casing": "https://www.techlandbd.com/pc-components/computer-case",
+            "casing_cooler": "https://www.techlandbd.com/pc-components/casing-fan",
+        },
+        "selectors": {
+            "card": ["div.product-layout", "div.product-grid", "div.product-thumb"],
+            "name": ["div.caption h4 a", "h4 a", "a.product-name"],
+            "url_attr": "href",
+            "price": ["p.price span.price-new", "p.price", "span.price"],
+            "stock": ["div.stock span", "span.stock"],
+            "brand": ["div.manufacturer a", "div.caption a[rel='nofollow']"],
+            "image": ["div.image img@data-src", "div.image img@src", "img@src"],
+            "specs_list": ["div.description ul li", "div.caption ul li"]
+        },
+    },
+    "ultratech": {
+        "name": "Ultratech BD",
+        "table_suffix": "_ultratech",
+        "categories": {
+            "processor": "https://www.ultratech.com.bd/pc-components/processor",
+            "cpu_cooler": "https://www.ultratech.com.bd/pc-components/cpu-cooler",
+            "motherboard": "https://www.ultratech.com.bd/pc-components/motherboard",
+            "graphics_card": "https://www.ultratech.com.bd/pc-components/graphics-card",
+            "ram": "https://www.ultratech.com.bd/pc-components/ram",
+            "power_supply": "https://www.ultratech.com.bd/pc-components/power-supply",
+            "hard_disk_drive": "https://www.ultratech.com.bd/pc-components/hdd",
+            "ssd": "https://www.ultratech.com.bd/pc-components/ssd",
+            "casing": "https://www.ultratech.com.bd/pc-components/casing",
+            "casing_cooler": "https://www.ultratech.com.bd/case-fan",
+        },
+        "selectors": {
+            "card": ["div.product-item", "div.product-grid"],
+            "name": ["h4 a", "a.product-name"],
+            "url_attr": "href",
+            "price": ["span.price-new", "span.price", "div.price"],
+            "stock": ["span.stock", "div.stock"],
+            "brand": ["div.manufacturer a", "div.brand a"],
+            "image": ["img@data-src", "img@src"],
+            "specs_list": ["ul.specs li", "div.description ul li"]
+        },
+    },
+    "skyland": {
+        "name": "Skyland BD",
+        "table_suffix": "_skyland",
+        "categories": {
+            "processor": "https://www.skyland.com.bd/components/processor",
+            "cpu_cooler": "https://www.skyland.com.bd/components/cpu-cooler",
+            "motherboard": "https://www.skyland.com.bd/components/motherboard",
+            "graphics_card": "https://www.skyland.com.bd/components/graphics-card",
+            "ram": "https://www.skyland.com.bd/components/ram",
+            "power_supply": "https://www.skyland.com.bd/components/power-supply",
+            "hard_disk_drive": "https://www.skyland.com.bd/components/hard-disk",
+            "ssd": "https://www.skyland.com.bd/components/ssd",
+            "casing": "https://www.skyland.com.bd/components/casing",
+            "casing_cooler": "https://www.skyland.com.bd/components/casing-fan",
+        },
+        "selectors": {
+            "card": ["div.product-layout", "div.product"],
+            "name": ["h4 a", "a.product-name"],
+            "url_attr": "href",
+            "price": ["span.price-new", "span.price", "div.price"],
+            "stock": ["span.stock", "div.stock"],
+            "brand": ["div.manufacturer a", "div.brand a"],
+            "image": ["img@data-src", "img@src"],
+            "specs_list": ["ul.specs li", "div.description ul li"]
+        },
+    },
 }
 
 def get_power_consumption(product_url):
@@ -67,26 +164,58 @@ def get_power_consumption(product_url):
     
     return 0
 
-def parse_product(card):
+def _first_non_empty(text_list):
+    for t in text_list:
+        if t and str(t).strip():
+            return str(t).strip()
+    return None
+
+
+def _select_attr(soup, selector_defs):
+    for sel in selector_defs:
+        if "@" in sel:
+            css, attr = sel.split("@", 1)
+            el = soup.select_one(css)
+            if el and el.has_attr(attr):
+                v = el.get(attr)
+                if v:
+                    return str(v).strip()
+        else:
+            el = soup.select_one(sel)
+            if el:
+                txt = el.get_text(strip=True)
+                if txt:
+                    return txt
+    return None
+
+
+def parse_product(card, selectors):
     try:
-        name_tag = card.select_one('h4.p-item-name a')
-        product_name = name_tag.text.strip()
-        product_url = name_tag['href']
+        name_el = None
+        for s in selectors.get("name", []):
+            name_el = card.select_one(s)
+            if name_el:
+                break
+        if not name_el:
+            return None
+        product_name = name_el.get_text(strip=True)
+        product_url = name_el.get(selectors.get("url_attr", "href")) or ""
 
-        img_tag = card.select_one('div.p-item-img img')
-        image_url = img_tag.get('data-src') or img_tag.get('src', 'N/A') if img_tag else 'N/A'
+        image_url = _select_attr(card, selectors.get("image", [])) or ""
 
-        price_tag = card.select_one('div.p-item-price span')
-        price = price_tag.text.strip().replace(',', '').replace('৳', '').strip() if price_tag else '0'
+        price_txt = _select_attr(card, selectors.get("price", [])) or "0"
+        price = re.sub(r"[^0-9]", "", price_txt)
 
-        stock_tag = card.select_one('div.p-item-stock span')
-        availability = stock_tag.text.strip() if stock_tag else 'N/A'
+        availability = _select_attr(card, selectors.get("stock", [])) or "N/A"
 
-        brand_tag = card.select_one('div.p-item-brand img')
-        brand = brand_tag['alt'] if brand_tag and brand_tag.has_attr('alt') else 'N/A'
+        brand = _select_attr(card, selectors.get("brand", [])) or "N/A"
 
-        specs_list = card.select('div.p-item-details ul li')
-        short_specs = ' | '.join([li.text.strip() for li in specs_list]) if specs_list else 'N/A'
+        specs_nodes = []
+        for s in selectors.get("specs_list", []):
+            specs_nodes = card.select(s)
+            if specs_nodes:
+                break
+        short_specs = ' | '.join([li.get_text(strip=True) for li in specs_nodes]) if specs_nodes else 'N/A'
 
         return {
             'product_name': product_name,
@@ -101,7 +230,7 @@ def parse_product(card):
         print(f"[⚠️ parse_product error] {e}")
         return None
 
-def scrape_category(category, base_url):
+def scrape_category(category, base_url, selectors):
     data = []
     page = 1
     while True:
@@ -109,14 +238,19 @@ def scrape_category(category, base_url):
         url = f"{base_url}?page={page}"
         response = requests.get(url, headers=HEADERS)
         soup = BeautifulSoup(response.content, 'html.parser')
-        product_cards = soup.select('div.p-item')
+        cards = []
+        for s in selectors.get("card", []):
+            found = soup.select(s)
+            if found:
+                cards = found
+                break
 
-        if not product_cards:
+        if not cards:
             print(f"✅ Finished scraping {category}.\n")
             break
 
-        for card in product_cards:
-            item = parse_product(card)
+        for card in cards:
+            item = parse_product(card, selectors)
             if item:
                 item['power_consumption'] = get_power_consumption(item['product_url'])
                 data.append(item)
@@ -154,7 +288,7 @@ def create_or_update_table(engine, table_name):
             else:
                 print(f"✅ Table '{table_name}' is ready.")
 
-def insert_into_supabase(category, data):
+def insert_into_supabase(category, data, table_suffix=None):
     if not data:
         print(f"No data to insert for {category}.")
         return
@@ -184,8 +318,8 @@ def insert_into_supabase(category, data):
     print(f"✅ Successfully uploaded {len(df)} items to '{table_name}' table.")
 
 
-def category_to_table_name(category):
-    return {
+def category_to_table_name(category, suffix: str | None = None):
+    base = {
         "processor": "processors",
         "cpu_cooler": "cpu_coolers",
         "motherboard": "motherboards",
@@ -197,13 +331,39 @@ def category_to_table_name(category):
         "casing": "casings",
         "casing_cooler": "casing_coolers"
     }.get(category, None)
+    if not base:
+        return None
+    return f"{base}{suffix}" if suffix else base
 
 if __name__ == '__main__':
-    for category, url in CATEGORIES.items():
-        table_name = category_to_table_name(category)
-        if not table_name:
-            continue
-        
-        scraped_data = scrape_category(category, url)
-        if scraped_data:
-            insert_into_supabase(category, scraped_data)
+    for retailer_key, cfg in RETAILERS.items():
+        print(f"\n==== Scraping retailer: {cfg['name']} ====")
+        suffix = cfg.get("table_suffix")
+        for category, url in cfg["categories"].items():
+            table_name = category_to_table_name(category, suffix)
+            if not table_name:
+                continue
+            try:
+                scraped_data = scrape_category(category, url, cfg["selectors"])
+                if scraped_data:
+                    # override to correct table with suffix in create_or_update_table
+                    def create_or_update_table_override(engine, _):
+                        return create_or_update_table(engine, table_name)
+                    # Insert
+                    engine = create_engine(SUPABASE_DB_URL)
+                    create_or_update_table(engine, table_name)
+                    df = pd.DataFrame(scraped_data)
+                    df.drop_duplicates(subset=['product_url'], inplace=True)
+                    with engine.connect() as conn:
+                        with conn.begin():
+                            conn.execute(text(f"TRUNCATE TABLE {table_name} RESTART IDENTITY;"))
+                            print(f"Cleared table '{table_name}' for fresh data.")
+                            for _, row in df.iterrows():
+                                row_dict = row.to_dict()
+                                columns = ", ".join(row_dict.keys())
+                                placeholders = ", ".join([f":{col}" for col in row_dict.keys()])
+                                insert_stmt = text(f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})")
+                                conn.execute(insert_stmt, row_dict)
+                    print(f"✅ Successfully uploaded {len(df)} items to '{table_name}' table.")
+            except Exception as e:
+                print(f"[⚠️ {cfg['name']} {category}] {e}")
