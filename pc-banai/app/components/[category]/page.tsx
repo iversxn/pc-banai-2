@@ -18,11 +18,7 @@ const TABLE_MAP: Record<string, string | string[]> = {
   cooling: ["cpu_coolers", "casing_coolers"],
 }
 
-export default async function CategoryPage({
-  params,
-}: {
-  params: { category: string }
-}) {
+export default async function CategoryPage({ params }: any) {
   const slug = params.category
   if (!Object.keys(TABLE_MAP).includes(slug)) return notFound()
 
@@ -32,10 +28,7 @@ export default async function CategoryPage({
   try {
     if (Array.isArray(tables)) {
       // fetch from several tables and merge
-      const promises = tables.map((t) =>
-        supabase.from(t).select("*").maybeSingle ? supabase.from(t).select("*") : supabase.from(t).select("*")
-      )
-      const results = await Promise.all(promises)
+      const results = await Promise.all(tables.map((t) => supabase.from(t).select("*")))
       rows = results.flatMap((r: any) => (r?.data ? r.data : []))
     } else {
       const { data, error } = await supabase.from(tables).select("*")
