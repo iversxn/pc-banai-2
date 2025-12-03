@@ -2,7 +2,7 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
-import { FunctionalThemeToggle } from "@/components/functional-theme-toggle"
+import FunctionalThemeToggle from "@/components/functional-theme-toggle" // ← default import
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -17,7 +17,7 @@ export const metadata: Metadata = {
     type: "website",
     locale: "en_US",
   },
-    generator: 'v0.dev'
+  generator: 'v0.dev'
 }
 
 export default function RootLayout({
