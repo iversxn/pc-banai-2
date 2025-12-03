@@ -1,3 +1,5 @@
+"use client"
+
 import React, { useMemo, useState } from "react"
 import { FunctionalComponentSelector } from "./functional-component-selector"
 import { FunctionalCompatibilityChecker } from "./functional-compatibility-checker"
@@ -7,8 +9,9 @@ import { Cpu, HardDrive, MemoryStick } from "lucide-react"
 /**
  * FunctionalBuildConfigurator
  *
- * - Uses named imports for FunctionalComponentSelector and FunctionalCompatibilityChecker.
- * - Uses default import for FunctionalBuildSummary (matches its default export).
+ * - Marked as a client component with "use client" because it uses hooks.
+ * - Imports FunctionalComponentSelector and FunctionalCompatibilityChecker as named exports.
+ * - Imports FunctionalBuildSummary as a default export.
  * - Minimal, typed, and defensive to avoid further import/type issues.
  */
 
