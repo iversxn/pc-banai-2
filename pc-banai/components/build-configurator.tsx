@@ -1,19 +1,15 @@
 import React, { useMemo, useState } from "react"
-import ComponentSelector from "./component-selector"
+import { ComponentSelector } from "./component-selector"
 import CompatibilityChecker from "./compatibility-checker"
 import BuildSummary from "./build-summary"
-import { Cpu, HardDrive, MemoryStick, Monitor, Zap, Box, Fan, Cpu as Motherboard } from "lucide-react"
+import { Cpu, HardDrive, MemoryStick } from "lucide-react"
 
 /**
  * BuildConfigurator
  *
- * A container that composes:
- *  - ComponentSelector      (left/top)
- *  - CompatibilityChecker   (left/middle)
- *  - BuildSummary           (right/preview)
- *
- * This file was updated to import BuildSummary as a default export
- * (the other file exports default). Minimal logic here; keep UI stable.
+ * - Imports ComponentSelector as a named export (matches the module's exports).
+ * - Composes ComponentSelector, CompatibilityChecker and BuildSummary.
+ * - Minimal, typed, and non-invasive: preserves existing UI and behaviour.
  */
 
 type SelectedComponent = {
@@ -26,14 +22,12 @@ type SelectedComponent = {
 }
 
 export default function BuildConfigurator() {
-  // store selected components keyed by category
   const [selected, setSelected] = useState<Record<string, SelectedComponent | null>>({})
 
   const onSelect = (category: string, comp: SelectedComponent | null) => {
     setSelected((prev) => ({ ...prev, [category]: comp }))
   }
 
-  // derive a simple components array suitable for BuildSummary
   const componentsForSummary = useMemo(() => {
     return Object.keys(selected).map((k) => {
       const s = selected[k]
@@ -48,20 +42,13 @@ export default function BuildConfigurator() {
 
   return (
     <div className="w-full flex flex-col lg:flex-row gap-4">
-      {/* left column: selectors + compatibility */}
       <div className="w-full lg:w-2/3 space-y-4">
         <header className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Build Configurator</h2>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="inline-flex items-center gap-1">
-              <Cpu size={14} /> CPU
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <MemoryStick size={14} /> RAM
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <HardDrive size={14} /> Storage
-            </span>
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <span className="inline-flex items-center gap-1"><Cpu size={14} /> CPU</span>
+            <span className="inline-flex items-center gap-1"><MemoryStick size={14} /> RAM</span>
+            <span className="inline-flex items-center gap-1"><HardDrive size={14} /> Storage</span>
           </div>
         </header>
 
@@ -74,12 +61,9 @@ export default function BuildConfigurator() {
         </section>
       </div>
 
-      {/* right column: summary */}
       <aside className="w-full lg:w-1/3">
         <div className="sticky top-6">
           <h3 className="text-sm font-medium mb-2">Build Summary</h3>
-
-          {/* BuildSummary expects `components?: Comp[] | null` per its typing */}
           <BuildSummary components={componentsForSummary} />
         </div>
       </aside>
