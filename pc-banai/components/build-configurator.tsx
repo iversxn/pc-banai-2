@@ -1,15 +1,16 @@
 import React, { useMemo, useState } from "react"
 import { ComponentSelector } from "./component-selector"
-import CompatibilityChecker from "./compatibility-checker"
+import { CompatibilityChecker } from "./compatibility-checker"
 import BuildSummary from "./build-summary"
 import { Cpu, HardDrive, MemoryStick } from "lucide-react"
 
 /**
  * BuildConfigurator
  *
- * - Imports ComponentSelector as a named export (matches the module's exports).
- * - Composes ComponentSelector, CompatibilityChecker and BuildSummary.
- * - Minimal, typed, and non-invasive: preserves existing UI and behaviour.
+ * - Imports ComponentSelector and CompatibilityChecker as named exports
+ *   because those modules export named components.
+ * - BuildSummary is imported as default (matches its default export).
+ * - Minimal, safe composition, preserving UI and behavior.
  */
 
 type SelectedComponent = {
