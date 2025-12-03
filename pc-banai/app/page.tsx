@@ -3,7 +3,7 @@ import { Features } from "@/components/features"
 import { BuildShowcase } from "@/components/build-showcase"
 import { PriceComparison } from "@/components/price-comparison"
 import { CommunitySection } from "@/components/community-section"
-import { FunctionalBuildConfigurator } from "@/components/functional-build-configurator"
+import FunctionalBuildConfigurator from "@/components/functional-build-configurator" // ← default import
 
 export default function HomePage() {
   return (
