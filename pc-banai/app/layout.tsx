@@ -2,22 +2,13 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
-import { FunctionalThemeToggle } from "@/components/functional-theme-toggle" // ← NAMED import
+import { FunctionalThemeToggle } from "@/components/functional-theme-toggle" // ← NAMED (this is how the file exports it)
 
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
   title: "PC Banai - স্বপ্ন হবে বাস্তব",
   description: "Bangladesh's premier PC building platform with real-time price comparison and compatibility checking",
-  keywords: "PC build, computer parts, Bangladesh, price comparison, gaming PC, office PC",
-  authors: [{ name: "PC Banai Team" }],
-  openGraph: {
-    title: "PC Banai - Build Your Dream PC",
-    description: "Compare prices from 25+ Bangladeshi retailers and build your perfect PC",
-    type: "website",
-    locale: "en_US",
-  },
-  generator: 'v0.dev'
 }
 
 export default function RootLayout({
