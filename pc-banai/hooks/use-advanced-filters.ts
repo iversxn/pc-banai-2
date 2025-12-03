@@ -1,6 +1,20 @@
 "use client"
 
 import { useState } from "react"
+
+export const useAdvancedFilters = () => {
+  const [showInStockOnly, setShowInStockOnly] = useState(false)
+  const [stockSort, setStockSort] = useState<"none" | "in-first" | "out-first">("none")
+
+  return {
+    showInStockOnly,
+    setShowInStockOnly,
+    stockSort,
+    setStockSort,
+  }
+}
+
+import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
