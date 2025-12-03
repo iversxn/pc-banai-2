@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useMemo, useState } from "react"
-import { FunctionalComponentSelector } from "./functional-component-selector"
+import { FunctionalComponentSelector, SelectedComponent } from "./functional-component-selector"
 import { FunctionalCompatibilityChecker } from "./functional-compatibility-checker"
 import FunctionalBuildSummary from "./functional-build-summary"
 import { Cpu, HardDrive, MemoryStick } from "lucide-react"
@@ -9,23 +9,14 @@ import { Cpu, HardDrive, MemoryStick } from "lucide-react"
 /**
  * FunctionalBuildConfigurator
  *
- * - Marked as a client component with "use client" because it uses hooks.
- * - Imports FunctionalComponentSelector and FunctionalCompatibilityChecker as named exports.
- * - Imports FunctionalBuildSummary as a default export.
- * - Minimal, typed, and defensive to avoid further import/type issues.
+ * Client component (uses useState/useMemo). Imports named exports
+ * above and passes `selected` directly to the compatibility checker.
  */
 
-type SelectedComponent = {
-  id?: string | number
-  name?: string
-  category?: string
-  price?: number
-  brand?: string
-  [k: string]: any
-}
+type SelectedRecord = Record<string, SelectedComponent | null>
 
 export default function FunctionalBuildConfigurator() {
-  const [selected, setSelected] = useState<Record<string, SelectedComponent | null>>({})
+  const [selected, setSelected] = useState<SelectedRecord>({})
 
   const onSelect = (category: string, comp: SelectedComponent | null) => {
     setSelected((prev) => ({ ...prev, [category]: comp }))
@@ -44,7 +35,7 @@ export default function FunctionalBuildConfigurator() {
   }, [selected])
 
   return (
-    <div className="w-full flex flex-col lg:flex-row gap-4">
+    <div id="build-configurator" className="w-full flex flex-col lg:flex-row gap-4">
       <div className="w-full lg:w-2/3 space-y-4">
         <header className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Functional Build Configurator</h2>
@@ -56,7 +47,7 @@ export default function FunctionalBuildConfigurator() {
         </header>
 
         <section>
-          <FunctionalComponentSelector onSelect={onSelect} selected={selected} />
+          <FunctionalComponentSelector selected={selected} onSelect={onSelect} />
         </section>
 
         <section>
