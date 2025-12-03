@@ -1,137 +1,191 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo, useEffect } from "react"
 
-export const useAdvancedFilters = () => {
-  const [showInStockOnly, setShowInStockOnly] = useState(false)
-  const [stockSort, setStockSort] = useState<"none" | "in-first" | "out-first">("none")
-
-  return {
-    showInStockOnly,
-    setShowInStockOnly,
-    stockSort,
-    setStockSort,
-  }
+interface PriceData {
+  retailerId: string
+  retailerName: string
+  price: number
+  currency: string
+  inStock: boolean
+  productUrl?: string
+  lastUpdated: Date
+  shippingCost: number
+  warranty: string
+  rating: number
+  trend: "up" | "down" | "stable"
+  isBestDeal?: boolean
 }
 
-import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Badge } from "@/components/ui/badge"
-import { Slider } from "@/components/ui/slider"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useAdvancedFilters } from "@/hooks/use-advanced-filters" // Hook now fetches its own data
-import { Search, Filter, X, SlidersHorizontal, Loader2 } from "lucide-react"
-import { Skeleton } from "./ui/skeleton"
+interface Component {
+  id: string
+  name: string
+  nameBengali: string
+  brand: string
+  category: string
+  specifications: { summary: string }
+  compatibility: Record<string, any>
+  prices: PriceData[]
+  images: string[]
+  powerConsumption: number
+  socket: string | null
+  memoryType: string | null
+  formFactor: string | null
+  reviews: any[]
+}
 
-export function AdvancedFilters() {
-  // The hook no longer needs any arguments
-  const {
+interface Filters {
+  inStockOnly: boolean
+  sortBy: string
+  sortOrder: "asc" | "desc"
+  minPrice: number
+  maxPrice: number
+  selectedBrands: string[]
+  selectedRetailers: string[]
+}
+
+export function useAdvancedFilters() {
+  const [searchTerm, setSearchTerm] = useState("")
+  const [filters, setFilters] = useState<Filters>({
+    inStockOnly: false,
+    sortBy: "price",
+    sortOrder: "asc",
+    minPrice: 0,
+    maxPrice: 1000000,
+    selectedBrands: [],
+    selectedRetailers: [],
+  })
+  const [components, setComponents] = useState<Component[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchComponents = async () => {
+      try {
+        const response = await fetch('/api/components')
+        const data = await response.json()
+        setComponents(data)
+      } catch (error) {
+        console.error("Failed to fetch components:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    
+    fetchComponents()
+  }, [])
+
+  const updateFilter = (key: keyof Filters, value: any) => {
+    setFilters(prev => ({ ...prev, [key]: value }))
+  }
+
+  const resetFilters = () => {
+    setFilters({
+      inStockOnly: false,
+      sortBy: "price",
+      sortOrder: "asc",
+      minPrice: 0,
+      maxPrice: 1000000,
+      selectedBrands: [],
+      selectedRetailers: [],
+    })
+    setSearchTerm("")
+  }
+
+  const filteredAndSortedComponents = useMemo(() => {
+    let filtered = [...components]
+
+    // Apply search term
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase()
+      filtered = filtered.filter(comp => 
+        comp.name.toLowerCase().includes(term) ||
+        comp.brand.toLowerCase().includes(term) ||
+        comp.category.toLowerCase().includes(term)
+      )
+    }
+
+    // Apply in-stock filter
+    if (filters.inStockOnly) {
+      filtered = filtered.filter(comp => 
+        comp.prices.some(p => p.inStock)
+      )
+    }
+
+    // Apply price range filter
+    filtered = filtered.filter(comp => {
+      const minPrice = Math.min(...comp.prices.map(p => p.price).filter(p => p > 0))
+      return minPrice >= filters.minPrice && minPrice <= filters.maxPrice
+    })
+
+    // Apply brand filter
+    if (filters.selectedBrands.length > 0) {
+      filtered = filtered.filter(comp => 
+        filters.selectedBrands.includes(comp.brand)
+      )
+    }
+
+    // Apply retailer filter
+    if (filters.selectedRetailers.length > 0) {
+      filtered = filtered.filter(comp =>
+        comp.prices.some(p => filters.selectedRetailers.includes(p.retailerName))
+      )
+    }
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      const aMinPrice = Math.min(...a.prices.map(p => p.price).filter(p => p > 0))
+      const bMinPrice = Math.min(...b.prices.map(p => p.price).filter(p => p > 0))
+      
+      if (filters.sortBy === "price") {
+        return filters.sortOrder === "asc" ? aMinPrice - bMinPrice : bMinPrice - aMinPrice
+      } else if (filters.sortBy === "name") {
+        return filters.sortOrder === "asc" 
+          ? a.name.localeCompare(b.name)
+          : b.name.localeCompare(a.name)
+      } else if (filters.sortBy === "stock") {
+        const aStock = a.prices.some(p => p.inStock)
+        const bStock = b.prices.some(p => p.inStock)
+        return filters.sortOrder === "asc" 
+          ? (aStock === bStock ? 0 : aStock ? -1 : 1)
+          : (aStock === bStock ? 0 : bStock ? -1 : 1)
+      }
+      return 0
+    })
+
+    return filtered
+  }, [components, searchTerm, filters])
+
+  const availableBrands = useMemo(() => {
+    const brands = new Set<string>()
+    components.forEach(comp => brands.add(comp.brand))
+    return Array.from(brands).sort()
+  }, [components])
+
+  const availableRetailers = useMemo(() => {
+    const retailers = new Set<string>()
+    components.forEach(comp => {
+      comp.prices.forEach(p => retailers.add(p.retailerName))
+    })
+    return Array.from(retailers).sort()
+  }, [components])
+
+  const getRetailerComparison = (component: Component) => {
+    return component.prices.map(price => ({
+      ...price,
+      isBestDeal: price.price === Math.min(...component.prices.map(p => p.price))
+    }))
+  }
+
+  return {
     filters,
     searchTerm,
     setSearchTerm,
     updateFilter,
     resetFilters,
     filteredAndSortedComponents,
-    isLoading, // <-- Use the new loading state
+    isLoading,
     availableBrands,
     availableRetailers,
-  } = useAdvancedFilters()
-
-  const [showAdvanced, setShowAdvanced] = useState(false)
-  
-  if (filters.sortBy === "stock") {
-  filtered.sort((a, b) => {
-    const aStock = a.prices.some(p => p.price > 0)
-    const bStock = b.prices.some(p => p.price > 0)
-    return filters.sortOrder === "asc" ? Number(aStock) - Number(bStock) : Number(bStock) - Number(aStock)
-  })
-}
-  
-  if (isLoading) {
-    return (
-        <div className="space-y-6">
-            <Skeleton className="h-10 w-full" />
-            <div className="flex flex-wrap gap-2">
-                <Skeleton className="h-8 w-32" />
-                <Skeleton className="h-8 w-24" />
-                <Skeleton className="h-8 w-40" />
-            </div>
-        </div>
-    )
+    getRetailerComparison,
   }
-
-  return (
-    <div className="space-y-6">
-      {/* Search Bar */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-        <Input
-          placeholder="Search components, brands, specifications..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10 pr-4"
-        />
-      </div>
-
-      {/* Quick Filters */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowAdvanced(!showAdvanced)}
-          className="flex items-center gap-2"
-        >
-          <SlidersHorizontal className="h-4 w-4" />
-          Advanced Filters
-        </Button>
-
-        <div className="flex items-center space-x-2">
-          <Checkbox
-            id="in-stock"
-            checked={filters.inStockOnly}
-            onCheckedChange={(checked) => updateFilter("inStockOnly", !!checked)}
-          />
-          <Label htmlFor="in-stock" className="text-sm">
-            In Stock Only
-          </Label>
-        </div>
-
-        <Select value={filters.sortBy} onValueChange={(value) => updateFilter("sortBy", value as any)}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="price">Price</SelectItem>
-            <SelectItem value="name">Name</SelectItem>
-            <SelectItem value="rating">Rating</SelectItem>
-            <SelectItem value="popularity">Popularity</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => updateFilter("sortOrder", filters.sortOrder === "asc" ? "desc" : "asc")}
-        >
-          {filters.sortOrder === "asc" ? "↑" : "↓"}
-        </Button>
-
-        {(filters.brands.length > 0 || filters.inStockOnly || searchTerm) && (
-          <Button variant="ghost" size="sm" onClick={resetFilters}>
-            <X className="h-4 w-4 mr-1" />
-            Clear All
-          </Button>
-        )}
-      </div>
-
-      {/* Results Summary */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-600">Showing {filteredAndSortedComponents.length} components</p>
-      </div>
-    </div>
-  )
 }
