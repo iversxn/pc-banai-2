@@ -2,7 +2,7 @@ import { notFound } from "next/navigation"
 import CategoryBrowserClient from "@/components/CategoryBrowserClient"
 import { getComponents } from "@/lib/getComponents"
 
-export const revalidate = 1800 // 30 minutes
+export const revalidate = 1800
 
 const validCategories = ["cpu", "motherboard", "ram", "gpu", "storage", "psu", "case", "cooling"] as const
 
@@ -11,7 +11,7 @@ export default async function CategoryPage({
 }: {
   params: Promise<{ category: string }>
 }) {
-  const { category } = await params
+  const { category } = await params // ← MUST await in Next.js 15
 
   if (!validCategories.includes(category as any)) {
     notFound()
