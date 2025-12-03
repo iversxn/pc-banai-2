@@ -2,7 +2,7 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
-import FunctionalThemeToggle from "@/components/functional-theme-toggle" // ← default import
+import { FunctionalThemeToggle } from "@/components/functional-theme-toggle" // ← NAMED import
 
 const inter = Inter({ subsets: ["latin"] })
 
