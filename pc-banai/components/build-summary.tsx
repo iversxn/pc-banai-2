@@ -1,66 +1,74 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import React from "react"
 import { Badge } from "@/components/ui/badge"
-import type { BuildState } from "@/types"
 
-interface BuildSummaryProps {
-  buildState: BuildState
+type PriceLike = number | string | { price?: number | string } | null | undefined
+
+type Comp = {
+  id?: string | number
+  name?: string
+  category?: string | null
+  prices?: PriceLike[] | null
+  [k: string]: any
 }
 
-export function BuildSummary({ buildState }: BuildSummaryProps) {
-  const componentCount = Object.keys(buildState.components).length
+interface Props {
+  /** List of components/builds to summarize */
+  components?: Comp[] | null
+}
+
+/**
+ * Helper to compute numeric prices array from various shapes.
+ * Explicitly types the map callback to avoid implicit any in strict TS.
+ */
+function extractNumericPrices(prices: PriceLike[] | null | undefined): number[] {
+  if (!Array.isArray(prices)) return []
+  const numeric = prices
+    .map((p: PriceLike) => {
+      if (p == null) return NaN
+      // if it's an object with a price field, use that
+      if (typeof p === "object" && "price" in (p as any)) {
+        const v = (p as any).price
+        const n = Number(v)
+        return Number.isFinite(n) ? n : NaN
+      }
+      // otherwise try to coerce directly (number or numeric string)
+      const n = Number(p as number | string)
+      return Number.isFinite(n) ? n : NaN
+    })
+    .filter((n) => Number.isFinite(n))
+    // TypeScript now knows these are numbers
+    .map((n) => n as number)
+
+  return numeric
+}
+
+export default function BuildSummary({ components }: Props) {
+  const comps = Array.isArray(components) ? components : []
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Build Summary</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="text-center p-3 bg-blue-50 rounded-lg">
-            <div className="text-2xl font-bold text-blue-600">৳{buildState.totalPrice.toLocaleString()}</div>
-            <div className="text-sm text-blue-800">Total Price</div>
-          </div>
-          <div className="text-center p-3 bg-orange-50 rounded-lg">
-            <div className="text-2xl font-bold text-orange-600">{buildState.wattage}W</div>
-            <div className="text-sm text-orange-800">Power Draw</div>
-          </div>
-        </div>
+    <section className="space-y-3">
+      {comps.length === 0 ? (
+        <div className="text-sm text-muted-foreground">No builds found.</div>
+      ) : (
+        comps.map((comp) => {
+          const category = comp?.category ?? "Uncategorized"
+          const prices = extractNumericPrices(comp?.prices)
+          const minPrice = prices.length ? Math.min(...prices) : 0
 
-        <div className="space-y-2">
-          <h4 className="font-medium">Selected Components ({componentCount}/8)</h4>
-          {Object.entries(buildState.components).map(([category, component]) => {
-            if (Array.isArray(component)) {
-              return component.map((comp, index) => (
-                <div key={`${category}-${index}`} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                  <div>
-                    <div className="font-medium text-sm">{comp.name}</div>
-                    <div className="text-xs text-gray-600">{category}</div>
-                  </div>
-                  <Badge variant="outline">৳{Math.min(...comp.prices.map((p) => p.price)).toLocaleString()}</Badge>
-                </div>
-              ))
-            } else if (component) {
-              return (
-                <div key={category} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                  <div>
-                    <div className="font-medium text-sm">{component.name}</div>
-                    <div className="text-xs text-gray-600">{category}</div>
-                  </div>
-                  <Badge variant="outline">৳{Math.min(...component.prices.map((p) => p.price)).toLocaleString()}</Badge>
-                </div>
-              )
-            }
-            return null
-          })}
-        </div>
+          return (
+            <div key={comp?.id ?? comp?.name ?? Math.random()} className="flex items-center justify-between p-2 border rounded-md">
+              <div className="flex flex-col">
+                <div className="text-sm font-medium">{comp?.name ?? "Unnamed build"}</div>
+                <div className="text-xs text-gray-600">{category}</div>
+              </div>
 
-        {componentCount === 0 && (
-          <div className="text-center py-4 text-gray-500">
-            <p>No components selected</p>
-            <p className="text-sm">কোন কম্পোনেন্ট নির্বাচিত নেই</p>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+              <Badge variant="outline">
+                ৳{minPrice.toLocaleString()}
+              </Badge>
+            </div>
+          )
+        })
+      )}
+    </section>
   )
 }
